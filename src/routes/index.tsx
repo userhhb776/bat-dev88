@@ -41,7 +41,9 @@ function Index() {
     setVercelToken(localStorage.getItem("forge_vercel_token") ?? "");
     if (!localStorage.getItem("forge_gemini_key")) setShowSettings(true);
   }, []);
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [messages, streaming]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streaming]);
 
   const saveSettings = () => {
     localStorage.setItem("forge_gemini_key", apiKey.trim());
