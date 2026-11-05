@@ -184,6 +184,7 @@ export function previewHtml(code: string) {
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 </head><body><div id="root"></div>
+<script>document.addEventListener('error',function(e){var t=e.target;if(t&&t.tagName==='IMG'&&!t.dataset.fb){t.dataset.fb=1;t.src='https://picsum.photos/seed/'+encodeURIComponent((t.alt||'img').slice(0,20))+'/1200/800';}},true);</script>
 <script>window.onerror=function(m){document.body.innerHTML='<pre style="color:#b91c1c;padding:16px;white-space:pre-wrap;font:13px monospace">'+m+'</pre>'}</script>
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useRef,useMemo,useCallback,useReducer,Fragment}=React;
