@@ -17,13 +17,13 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-const MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"];
+const MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-pro-latest"];
 const SUGGESTIONS = ["Landing page para uma cafeteria artesanal", "Dashboard de finanças pessoais", "App de lista de tarefas com filtros"];
 
 function Index() {
   const [apiKey, setApiKey] = useState("");
   const [vercelToken, setVercelToken] = useState("");
-  const [model, setModel] = useState<string>("gemini-2.5-flash");
+  const [model, setModel] = useState<string>("gemini-3.8-flash");
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
