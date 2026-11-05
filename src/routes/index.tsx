@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Download, Eye, Code2, KeyRound, Send, Square, Triangle, Hammer, RotateCw } from "lucide-react";
-import { deployVercel, downloadZip, extractCode, previewHtml, streamGemini, type Msg } from "@/lib/forge";
+import { deployVercel, downloadZip, extractCode, previewHtml, streamChat, PROVIDERS, type Provider, type Msg } from "@/lib/forge";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -17,13 +17,12 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-const MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-pro-latest"];
 const SUGGESTIONS = ["Landing page para uma cafeteria artesanal", "Dashboard de finanças pessoais", "App de lista de tarefas com filtros"];
 
 function Index() {
-  const [apiKey, setApiKey] = useState("");
+  const [keys, setKeys] = useState<Record<Provider, string>>({ gemini: "", groq: "", openrouter: "", deepseek: "" });
   const [vercelToken, setVercelToken] = useState("");
-  const [model, setModel] = useState<string>("gemini-3.8-flash");
+  const [model, setModel] = useState<string>("groq|llama-3.3-70b-versatile");
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -37,22 +36,27 @@ function Index() {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setApiKey(localStorage.getItem("forge_gemini_key") ?? "");
+    const k = { gemini: localStorage.getItem("forge_gemini_key") ?? "", groq: localStorage.getItem("forge_groq_key") ?? "", openrouter: localStorage.getItem("forge_openrouter_key") ?? "", deepseek: localStorage.getItem("forge_deepseek_key") ?? "" };
+    setKeys(k);
+    const saved = localStorage.getItem("forge_model");
+    if (saved) setModel(saved);
     setVercelToken(localStorage.getItem("forge_vercel_token") ?? "");
-    if (!localStorage.getItem("forge_gemini_key")) setShowSettings(true);
+    if (!Object.values(k).some(Boolean)) setShowSettings(true);
   }, []);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streaming]);
 
   const saveSettings = () => {
-    localStorage.setItem("forge_gemini_key", apiKey.trim());
+    (Object.keys(keys) as Provider[]).forEach((p) => localStorage.setItem(`forge_${p}_key`, keys[p].trim()));
     localStorage.setItem("forge_vercel_token", vercelToken.trim());
     setShowSettings(false);
   };
 
   const send = async (text: string) => {
     if (!text.trim() || busy) return;
+    const [provider, modelName] = model.split("|") as [Provider, string];
+    const apiKey = keys[provider];
     if (!apiKey) return setShowSettings(true);
     const history: Msg[] = [...messages, { role: "user", text: text.trim() }];
     setMessages(history);
@@ -64,7 +68,7 @@ function Index() {
     const ac = new AbortController();
     abortRef.current = ac;
     try {
-      const full = await streamGemini(apiKey, model, history, (t) => {
+      const full = await streamChat(provider, apiKey, modelName, history, (t) => {
         setStreaming(t);
         const c = extractCode(t);
         if (c) setCode(c);
@@ -105,8 +109,12 @@ function Index() {
           <Hammer className="h-5 w-5 text-primary" /> Forge
         </div>
         <div className="flex items-center gap-2">
-          <select value={model} onChange={(e) => setModel(e.target.value)} className="rounded-md border border-border bg-card px-2 py-1.5 font-mono text-xs">
-            {MODELS.map((m) => <option key={m}>{m}</option>)}
+          <select value={model} onChange={(e) => { setModel(e.target.value); localStorage.setItem("forge_model", e.target.value); }} className="rounded-md border border-border bg-card px-2 py-1.5 font-mono text-xs">
+            {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
+              <optgroup key={p} label={PROVIDERS[p].label}>
+                {PROVIDERS[p].models.map((m) => <option key={m} value={`${p}|${m}`}>{m}</option>)}
+              </optgroup>
+            ))}
           </select>
           <button onClick={() => setShowSettings(true)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent">
             <KeyRound className="h-4 w-4" /> Chaves
@@ -196,12 +204,16 @@ function Index() {
 
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl">
             <h2 className="font-display text-xl font-bold">Suas chaves</h2>
             <p className="mt-1 text-sm text-muted-foreground">Ficam salvas apenas neste navegador.</p>
-            <label className="mt-5 block text-sm font-medium">Chave da API Gemini</label>
-            <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIza…" className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-primary" />
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-primary underline">Obter chave no Google AI Studio</a>
+            {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
+              <div key={p} className="mt-4">
+                <label className="block text-sm font-medium">Chave {PROVIDERS[p].label}</label>
+                <input type="password" value={keys[p]} onChange={(e) => setKeys((k) => ({ ...k, [p]: e.target.value }))} placeholder={PROVIDERS[p].placeholder} className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-primary" />
+                <a href={PROVIDERS[p].keyUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-primary underline">Obter chave {PROVIDERS[p].label}</a>
+              </div>
+            ))}
             <label className="mt-4 block text-sm font-medium">Token da Vercel (opcional)</label>
             <input type="password" value={vercelToken} onChange={(e) => setVercelToken(e.target.value)} placeholder="Para publicar com um clique" className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-primary" />
             <a href="https://vercel.com/account/tokens" target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-primary underline">Criar token na Vercel</a>
