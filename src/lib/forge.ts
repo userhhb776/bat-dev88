@@ -15,6 +15,12 @@ export function extractCode(text: string): string | null {
   return m?.[1] ? m[1].trim() : null;
 }
 
+// Accepts a raw key or a pasted cURL snippet and returns just the key.
+export function cleanKey(input: string): string {
+  const m = input.match(/(AQ\.[A-Za-z0-9_\-.]+|AIza[A-Za-z0-9_\-]+)/);
+  return (m ? m[1] : input).trim().replace(/^['"]|['"]$/g, "");
+}
+
 export async function streamGemini(
   apiKey: string,
   model: string,
@@ -23,11 +29,11 @@ export async function streamGemini(
   signal?: AbortSignal,
 ) {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
     {
       method: "POST",
       signal: signal ?? null,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": cleanKey(apiKey) },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: history.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
