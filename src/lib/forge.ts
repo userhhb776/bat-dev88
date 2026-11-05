@@ -113,6 +113,8 @@ export async function streamChat(
     body: JSON.stringify({
       model,
       stream: true,
+      max_tokens: provider === "groq" ? 32000 : 16000,
+      ...(provider === "groq" ? { reasoning_effort: "low" } : {}),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         ...history.map((m) => ({ role: m.role === "model" ? "assistant" : "user", content: m.text })),

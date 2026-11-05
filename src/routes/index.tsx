@@ -71,6 +71,7 @@ function Index() {
             if (c) setCode(c);
           }, ac.signal);
           if (!full.trim()) throw new Error("Resposta vazia");
+          if ((full.match(/```/g) ?? []).length % 2 === 1) throw new Error("Resposta incompleta");
           lastErr = null;
           setNotice("");
           break;
