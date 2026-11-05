@@ -154,7 +154,8 @@ export async function streamChat(
 
 function cleanForPreview(code: string) {
   return code
-    .replace(/^\s*import[^;]*;?\s*$/gm, "")
+    .replace(/^\s*import\s[\s\S]*?from\s*['"][^'"]+['"];?/gm, "")
+    .replace(/^\s*import\s*['"][^'"]+['"];?/gm, "")
     .replace(/export\s+default\s+/g, "")
     .replace(/^\s*export\s+/gm, "");
 }
