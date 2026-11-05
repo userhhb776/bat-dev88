@@ -113,6 +113,8 @@ export async function streamChat(
     body: JSON.stringify({
       model,
       stream: true,
+      max_tokens: provider === "groq" ? 32000 : 16000,
+      ...(provider === "groq" ? { reasoning_effort: "low" } : {}),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         ...history.map((m) => ({ role: m.role === "model" ? "assistant" : "user", content: m.text })),
@@ -152,7 +154,8 @@ export async function streamChat(
 
 function cleanForPreview(code: string) {
   return code
-    .replace(/^\s*import[^;]*;?\s*$/gm, "")
+    .replace(/^\s*import\s[\s\S]*?from\s*['"][^'"]+['"];?/gm, "")
+    .replace(/^\s*import\s*['"][^'"]+['"];?/gm, "")
     .replace(/export\s+default\s+/g, "")
     .replace(/^\s*export\s+/gm, "");
 }
@@ -163,7 +166,7 @@ export function previewHtml(code: string) {
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 </head><body><div id="root"></div>
 <script>window.onerror=function(m){document.body.innerHTML='<pre style="color:#b91c1c;padding:16px;white-space:pre-wrap;font:13px monospace">'+m+'</pre>'}</script>
 <script type="text/babel" data-presets="react">

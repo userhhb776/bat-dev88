@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Download, Eye, Code2, KeyRound, Send, Square, Triangle, Hammer, RotateCw } from "lucide-react";
-import { deployVercel, downloadZip, extractCode, previewHtml, streamChat, PROVIDERS, DEFAULT_KEYS, fallbackChain, type Provider, type Msg } from "@/lib/forge";
+import { Download, Eye, Code2, Send, Square, Triangle, Hammer, RotateCw } from "lucide-react";
+import { deployVercel, downloadZip, extractCode, previewHtml, streamChat, DEFAULT_KEYS, fallbackChain, type Msg } from "@/lib/forge";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -20,9 +20,9 @@ export const Route = createFileRoute("/")({
 const SUGGESTIONS = ["Landing page para uma cafeteria artesanal", "Dashboard de finanças pessoais", "App de lista de tarefas com filtros"];
 
 function Index() {
-  const [keys, setKeys] = useState<Record<Provider, string>>({ gemini: "", groq: "", openrouter: "", deepseek: "" });
+  const keys = DEFAULT_KEYS;
   const [vercelToken, setVercelToken] = useState("");
-  const [model, setModel] = useState<string>("groq|openai/gpt-oss-120b");
+  const model = "groq|openai/gpt-oss-120b";
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -36,20 +36,13 @@ function Index() {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const k = { gemini: localStorage.getItem("forge_gemini_key") ?? "", groq: localStorage.getItem("forge_groq_key") ?? "", openrouter: localStorage.getItem("forge_openrouter_key") ?? "", deepseek: localStorage.getItem("forge_deepseek_key") ?? "" };
-    (Object.keys(k) as Provider[]).forEach((p) => { if (!k[p]) k[p] = DEFAULT_KEYS[p]; });
-    setKeys(k);
-    const saved = localStorage.getItem("forge_model");
-    if (saved) setModel(saved);
     setVercelToken(localStorage.getItem("forge_vercel_token") ?? "");
-    if (!Object.values(k).some(Boolean)) setShowSettings(true);
   }, []);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streaming]);
 
   const saveSettings = () => {
-    (Object.keys(keys) as Provider[]).forEach((p) => localStorage.setItem(`forge_${p}_key`, keys[p].trim()));
     localStorage.setItem("forge_vercel_token", vercelToken.trim());
     setShowSettings(false);
   };
@@ -57,7 +50,6 @@ function Index() {
   const send = async (text: string) => {
     if (!text.trim() || busy) return;
     const chain = fallbackChain(model, keys);
-    if (!chain.length) return setShowSettings(true);
     const history: Msg[] = [...messages, { role: "user", text: text.trim() }];
     setMessages(history);
     setInput("");
@@ -72,13 +64,14 @@ function Index() {
       let lastErr: Error | null = null;
       for (const [provider, modelName] of chain) {
         try {
-          setNotice(`Gerando com ${PROVIDERS[provider].label} · ${modelName}…`);
+          setNotice("Gerando…");
           full = await streamChat(provider, keys[provider], modelName, history, (t) => {
             setStreaming(t);
             const c = extractCode(t);
             if (c) setCode(c);
           }, ac.signal);
           if (!full.trim()) throw new Error("Resposta vazia");
+          if ((full.match(/```/g) ?? []).length % 2 === 1) throw new Error("Resposta incompleta");
           lastErr = null;
           setNotice("");
           break;
@@ -88,7 +81,7 @@ function Index() {
           setStreaming("");
         }
       }
-      if (lastErr) throw new Error(`Todos os provedores falharam. Último erro: ${lastErr.message}`);
+      if (lastErr) throw new Error("A IA está indisponível no momento. Tente de novo em instantes.");
       setMessages((m) => [...m, { role: "model", text: full }]);
       const c = extractCode(full);
       if (c) {
@@ -125,16 +118,6 @@ function Index() {
           <Hammer className="h-5 w-5 text-primary" /> Forge
         </div>
         <div className="flex items-center gap-2">
-          <select value={model} onChange={(e) => { setModel(e.target.value); localStorage.setItem("forge_model", e.target.value); }} className="rounded-md border border-border bg-card px-2 py-1.5 font-mono text-xs">
-            {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
-              <optgroup key={p} label={PROVIDERS[p].label}>
-                {PROVIDERS[p].models.map((m) => <option key={m} value={`${p}|${m}`}>{m}</option>)}
-              </optgroup>
-            ))}
-          </select>
-          <button onClick={() => setShowSettings(true)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent">
-            <KeyRound className="h-4 w-4" /> Chaves
-          </button>
           <button disabled={!code} onClick={() => downloadZip(code)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-40">
             <Download className="h-4 w-4" /> ZIP
           </button>
@@ -150,7 +133,7 @@ function Index() {
             {messages.length === 0 && !busy && (
               <div className="pt-8">
                 <h1 className="font-display text-2xl font-bold">O que vamos construir?</h1>
-                <p className="mt-2 text-sm text-muted-foreground">Descreva um site ou app. O Gemini gera React + Tailwind e você vê o resultado ao lado.</p>
+                <p className="mt-2 text-sm text-muted-foreground">Descreva um site ou app. A IA gera o código e você vê o resultado ao lado.</p>
                 <div className="mt-6 space-y-2">
                   {SUGGESTIONS.map((s) => (
                     <button key={s} onClick={() => send(s)} className="block w-full rounded-lg border border-border px-3 py-2 text-left text-sm hover:border-primary hover:bg-accent">{s}</button>
@@ -221,15 +204,7 @@ function Index() {
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
           <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h2 className="font-display text-xl font-bold">Suas chaves</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Ficam salvas apenas neste navegador.</p>
-            {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
-              <div key={p} className="mt-4">
-                <label className="block text-sm font-medium">Chave {PROVIDERS[p].label}</label>
-                <input type="password" value={keys[p]} onChange={(e) => setKeys((k) => ({ ...k, [p]: e.target.value }))} placeholder={PROVIDERS[p].placeholder} className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-primary" />
-                <a href={PROVIDERS[p].keyUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-primary underline">Obter chave {PROVIDERS[p].label}</a>
-              </div>
-            ))}
+            <h2 className="font-display text-xl font-bold">Publicar na Vercel</h2>
             <label className="mt-4 block text-sm font-medium">Token da Vercel (opcional)</label>
             <input type="password" value={vercelToken} onChange={(e) => setVercelToken(e.target.value)} placeholder="Para publicar com um clique" className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-primary" />
             <a href="https://vercel.com/account/tokens" target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-primary underline">Criar token na Vercel</a>
