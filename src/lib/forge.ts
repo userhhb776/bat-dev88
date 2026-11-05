@@ -71,6 +71,68 @@ export async function streamGemini(
   return full;
 }
 
+export type Provider = "gemini" | "groq" | "openrouter" | "deepseek";
+
+export const PROVIDERS: Record<Provider, { label: string; url?: string; keyUrl: string; placeholder: string; models: string[] }> = {
+  groq: { label: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keyUrl: "https://console.groq.com/keys", placeholder: "gsk_…", models: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "qwen/qwen3-32b"] },
+  openrouter: { label: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keyUrl: "https://openrouter.ai/keys", placeholder: "sk-or-v1-…", models: ["deepseek/deepseek-chat-v3-0324:free", "qwen/qwen-2.5-coder-32b-instruct:free", "meta-llama/llama-3.3-70b-instruct:free"] },
+  deepseek: { label: "DeepSeek", url: "https://api.deepseek.com/chat/completions", keyUrl: "https://platform.deepseek.com/api_keys", placeholder: "sk-…", models: ["deepseek-chat", "deepseek-reasoner"] },
+  gemini: { label: "Gemini", keyUrl: "https://aistudio.google.com/apikey", placeholder: "AIza… ou AQ.…", models: ["gemini-3.8-flash", "gemini-flash-latest", "gemini-pro-latest"] },
+};
+
+export async function streamChat(
+  provider: Provider,
+  apiKey: string,
+  model: string,
+  history: Msg[],
+  onChunk: (full: string) => void,
+  signal?: AbortSignal,
+) {
+  if (provider === "gemini") return streamGemini(apiKey, model, history, onChunk, signal);
+  const res = await fetch(PROVIDERS[provider].url!, {
+    method: "POST",
+    signal: signal ?? null,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey.trim()}` },
+    body: JSON.stringify({
+      model,
+      stream: true,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        ...history.map((m) => ({ role: m.role === "model" ? "assistant" : "user", content: m.text })),
+      ],
+    }),
+  });
+  if (!res.ok || !res.body) {
+    let msg = `Erro ${res.status}`;
+    try {
+      const j = await res.json();
+      msg = j?.error?.message ?? msg;
+    } catch {}
+    throw new Error(msg);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let full = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") continue;
+      try {
+        full += JSON.parse(data)?.choices?.[0]?.delta?.content ?? "";
+        onChunk(full);
+      } catch {}
+    }
+  }
+  return full;
+}
+
 function cleanForPreview(code: string) {
   return code
     .replace(/^\s*import[^;]*;?\s*$/gm, "")
