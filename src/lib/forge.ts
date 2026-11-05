@@ -80,6 +80,23 @@ export const PROVIDERS: Record<Provider, { label: string; url?: string; keyUrl: 
   gemini: { label: "Gemini", keyUrl: "https://aistudio.google.com/apikey", placeholder: "AIza… ou AQ.…", models: ["gemini-3.8-flash", "gemini-flash-latest", "gemini-pro-latest"] },
 };
 
+// Built-in keys (private app, per owner's request).
+export const DEFAULT_KEYS: Record<Provider, string> = {
+  groq: "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",
+  openrouter: "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",
+  deepseek: "sk-e971b60e1ab84e09bf79f6c9fcf32609",
+  gemini: "",
+};
+
+// Fallback order: selected model first, then every other model; DeepSeek is last (reserve).
+export function fallbackChain(selected: string, keys: Record<Provider, string>): [Provider, string][] {
+  const order: Provider[] = ["groq", "openrouter", "gemini", "deepseek"];
+  const all: [Provider, string][] = order.flatMap((p) => PROVIDERS[p].models.map((m) => [p, m] as [Provider, string]));
+  const [sp, sm] = selected.split("|") as [Provider, string];
+  const chain = [[sp, sm] as [Provider, string], ...all.filter(([p, m]) => !(p === sp && m === sm))];
+  return chain.filter(([p]) => !!keys[p]);
+}
+
 export async function streamChat(
   provider: Provider,
   apiKey: string,
