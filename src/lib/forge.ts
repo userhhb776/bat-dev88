@@ -12,7 +12,7 @@ export type Msg = { role: "user" | "model"; text: string };
 
 export function extractCode(text: string): string | null {
   const m = text.match(/```(?:jsx|tsx|javascript|js|react)?\s*\n([\s\S]*?)(```|$)/);
-  return m ? m[1].trim() : null;
+  return m?.[1] ? m[1].trim() : null;
 }
 
 export async function streamGemini(
