@@ -30,6 +30,7 @@ function Index() {
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState("");
   const [tab, setTab] = useState<"preview" | "code">("preview");
+  const [mView, setMView] = useState<"chat" | "app">("chat");
   const [notice, setNotice] = useState("");
   const [frameKey, setFrameKey] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -87,6 +88,7 @@ function Index() {
       if (c) {
         setCode(c);
         setTab("preview");
+        setMView("app");
         setFrameKey((k) => k + 1);
       }
     } catch (e) {
@@ -128,7 +130,7 @@ function Index() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-[400px] shrink-0 flex-col border-r border-border bg-card">
+        <aside className={`${mView === "chat" ? "flex" : "hidden"} w-full md:flex md:w-[400px] shrink-0`} data-x="" style={{}} data-y=" border-r border-border bg-card">
           <div className="flex-1 space-y-4 overflow-y-auto p-4">
             {messages.length === 0 && !busy && (
               <div className="pt-8">
@@ -144,6 +146,9 @@ function Index() {
             {messages.map((m, i) => (
               <div key={i} className={m.role === "user" ? "ml-8 rounded-xl bg-primary px-3 py-2 text-sm text-primary-foreground" : "text-sm whitespace-pre-wrap text-foreground"}>
                 {m.role === "user" ? m.text : chatText(m.text)}
+                {m.role === "model" && extractCode(m.text) && (
+                  <button onClick={() => { setTab("preview"); setMView("app"); }} className="mt-2 flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs md:hidden"><Eye className="h-3.5 w-3.5" /> Abrir Preview</button>
+                )}
               </div>
             ))}
             {busy && (
@@ -173,8 +178,9 @@ function Index() {
           </form>
         </aside>
 
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main className={`${mView === "app" ? "flex" : "hidden"} md:flex min-w-0 flex-1 flex-col`}>
           <div className="flex h-11 items-center gap-1 border-b border-border px-3">
+            <button onClick={() => setMView("chat")} className="mr-1 rounded-md px-3 py-1 text-sm text-muted-foreground hover:text-foreground md:hidden">← Chat</button>
             {(["preview", "code"] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)} className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-sm ${tab === t ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 {t === "preview" ? <Eye className="h-4 w-4" /> : <Code2 className="h-4 w-4" />} {t === "preview" ? "Preview" : "Código"}
