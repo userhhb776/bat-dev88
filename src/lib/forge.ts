@@ -18,7 +18,7 @@ export function extractCode(text: string): string | null {
 // Accepts a raw key or a pasted cURL snippet and returns just the key.
 export function cleanKey(input: string): string {
   const m = input.match(/(AQ\.[A-Za-z0-9_\-.]+|AIza[A-Za-z0-9_\-]+)/);
-  return (m ? m[1] : input).trim().replace(/^['"]|['"]$/g, "");
+  return (m?.[1] ?? input).trim().replace(/^['"]|['"]$/g, "");
 }
 
 export async function streamGemini(
