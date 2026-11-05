@@ -23,7 +23,7 @@ const SUGGESTIONS = ["Landing page para uma cafeteria artesanal", "Dashboard de 
 function Index() {
   const [apiKey, setApiKey] = useState("");
   const [vercelToken, setVercelToken] = useState("");
-  const [model, setModel] = useState(MODELS[0]);
+  const [model, setModel] = useState<string>("gemini-2.5-flash");
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
