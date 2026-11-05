@@ -74,8 +74,8 @@ export async function streamGemini(
 export type Provider = "gemini" | "groq" | "openrouter" | "deepseek";
 
 export const PROVIDERS: Record<Provider, { label: string; url?: string; keyUrl: string; placeholder: string; models: string[] }> = {
-  groq: { label: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keyUrl: "https://console.groq.com/keys", placeholder: "gsk_…", models: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "qwen/qwen3-32b"] },
-  openrouter: { label: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keyUrl: "https://openrouter.ai/keys", placeholder: "sk-or-v1-…", models: ["deepseek/deepseek-chat-v3-0324:free", "qwen/qwen-2.5-coder-32b-instruct:free", "meta-llama/llama-3.3-70b-instruct:free"] },
+  groq: { label: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keyUrl: "https://console.groq.com/keys", placeholder: "gsk_…", models: ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"] },
+  openrouter: { label: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keyUrl: "https://openrouter.ai/keys", placeholder: "sk-or-v1-…", models: ["cohere/north-mini-code:free", "google/gemma-4-31b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free"] },
   deepseek: { label: "DeepSeek", url: "https://api.deepseek.com/chat/completions", keyUrl: "https://platform.deepseek.com/api_keys", placeholder: "sk-…", models: ["deepseek-chat", "deepseek-reasoner"] },
   gemini: { label: "Gemini", keyUrl: "https://aistudio.google.com/apikey", placeholder: "AIza… ou AQ.…", models: ["gemini-3.8-flash", "gemini-flash-latest", "gemini-pro-latest"] },
 };

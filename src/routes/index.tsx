@@ -22,7 +22,7 @@ const SUGGESTIONS = ["Landing page para uma cafeteria artesanal", "Dashboard de 
 function Index() {
   const [keys, setKeys] = useState<Record<Provider, string>>({ gemini: "", groq: "", openrouter: "", deepseek: "" });
   const [vercelToken, setVercelToken] = useState("");
-  const [model, setModel] = useState<string>("groq|llama-3.3-70b-versatile");
+  const [model, setModel] = useState<string>("groq|openai/gpt-oss-120b");
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
