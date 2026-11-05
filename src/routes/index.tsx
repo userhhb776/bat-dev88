@@ -130,7 +130,7 @@ function Index() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className={`${mView === "chat" ? "flex" : "hidden"} w-full md:flex md:w-[400px] shrink-0`} data-x="" style={{}} data-y=" border-r border-border bg-card">
+        <aside className={`${mView === "chat" ? "flex" : "hidden"} w-full shrink-0 flex-col border-r border-border bg-card md:flex md:w-[400px]`}>
           <div className="flex-1 space-y-4 overflow-y-auto p-4">
             {messages.length === 0 && !busy && (
               <div className="pt-8">
