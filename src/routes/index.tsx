@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Download, Eye, Code2, KeyRound, Send, Square, Triangle, Hammer, RotateCw } from "lucide-react";
-import { deployVercel, downloadZip, extractCode, previewHtml, streamChat, PROVIDERS, type Provider, type Msg } from "@/lib/forge";
+import { deployVercel, downloadZip, extractCode, previewHtml, streamChat, PROVIDERS, DEFAULT_KEYS, fallbackChain, type Provider, type Msg } from "@/lib/forge";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -37,6 +37,7 @@ function Index() {
 
   useEffect(() => {
     const k = { gemini: localStorage.getItem("forge_gemini_key") ?? "", groq: localStorage.getItem("forge_groq_key") ?? "", openrouter: localStorage.getItem("forge_openrouter_key") ?? "", deepseek: localStorage.getItem("forge_deepseek_key") ?? "" };
+    (Object.keys(k) as Provider[]).forEach((p) => { if (!k[p]) k[p] = DEFAULT_KEYS[p]; });
     setKeys(k);
     const saved = localStorage.getItem("forge_model");
     if (saved) setModel(saved);
@@ -55,9 +56,8 @@ function Index() {
 
   const send = async (text: string) => {
     if (!text.trim() || busy) return;
-    const [provider, modelName] = model.split("|") as [Provider, string];
-    const apiKey = keys[provider];
-    if (!apiKey) return setShowSettings(true);
+    const chain = fallbackChain(model, keys);
+    if (!chain.length) return setShowSettings(true);
     const history: Msg[] = [...messages, { role: "user", text: text.trim() }];
     setMessages(history);
     setInput("");
@@ -68,11 +68,27 @@ function Index() {
     const ac = new AbortController();
     abortRef.current = ac;
     try {
-      const full = await streamChat(provider, apiKey, modelName, history, (t) => {
-        setStreaming(t);
-        const c = extractCode(t);
-        if (c) setCode(c);
-      }, ac.signal);
+      let full = "";
+      let lastErr: Error | null = null;
+      for (const [provider, modelName] of chain) {
+        try {
+          setNotice(`Gerando com ${PROVIDERS[provider].label} · ${modelName}…`);
+          full = await streamChat(provider, keys[provider], modelName, history, (t) => {
+            setStreaming(t);
+            const c = extractCode(t);
+            if (c) setCode(c);
+          }, ac.signal);
+          if (!full.trim()) throw new Error("Resposta vazia");
+          lastErr = null;
+          setNotice("");
+          break;
+        } catch (err) {
+          if ((err as Error).name === "AbortError") throw err;
+          lastErr = err as Error;
+          setStreaming("");
+        }
+      }
+      if (lastErr) throw new Error(`Todos os provedores falharam. Último erro: ${lastErr.message}`);
       setMessages((m) => [...m, { role: "model", text: full }]);
       const c = extractCode(full);
       if (c) {
