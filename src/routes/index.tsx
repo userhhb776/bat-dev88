@@ -111,7 +111,7 @@ function Index() {
     }
   };
 
-  const chatText = (t: string) => t.replace(/```[\s\S]*?(```|$)/g, "").trim() || "Código gerado ✓";
+  const chatText = (t: string) => t.replace(/```[\s\S]*?(```|$)/g, "\n").replace(/\n{3,}/g, "\n\n").trim() || "Código gerado ✓";
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
