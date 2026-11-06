@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Download, Eye, Code2, Send, Square, Triangle, Hammer, RotateCw } from "lucide-react";
-import { deployVercel, downloadZip, extractCode, previewHtml, streamChat, DEFAULT_KEYS, fallbackChain, type Msg } from "@/lib/forge";
+import { deployVercel, downloadZip, extractCode, streamChat, DEFAULT_KEYS, fallbackChain, type Msg } from "@/lib/forge";
+import { ForgePreview } from "@/components/forge-preview";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Forge — Crie sites e apps com IA" },
-      { name: "description", content: "Descreva seu app, a IA Gemini gera React + Tailwind com preview ao vivo, ZIP e deploy na Vercel." },
+      { name: "description", content: "Crie sites e aplicativos com IA, converse sobre suas ideias e veja o resultado com exportação ZIP e Vercel." },
       { property: "og:title", content: "Forge — Crie sites e apps com IA" },
       { property: "og:description", content: "Chat com IA, preview em tempo real, código React + Tailwind, ZIP e Vercel." },
       { property: "og:type", content: "website" },
@@ -68,8 +70,6 @@ function Index() {
           setNotice("Gerando…");
           full = await streamChat(provider, keys[provider], modelName, history, (t) => {
             setStreaming(t);
-            const c = extractCode(t);
-            if (c) setCode(c);
           }, ac.signal);
           if (!full.trim()) throw new Error("Resposta vazia");
           if ((full.match(/```/g) ?? []).length % 2 === 1) throw new Error("Resposta incompleta");
@@ -96,6 +96,7 @@ function Index() {
     } finally {
       setStreaming("");
       setBusy(false);
+      setNotice("");
     }
   };
 
@@ -114,7 +115,7 @@ function Index() {
   const chatText = (t: string) => t.replace(/```[\s\S]*?(```|$)/g, "\n").replace(/\n{3,}/g, "\n\n").trim() || "Código gerado ✓";
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
+    <div className="flex h-dvh flex-col bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-2 font-display text-lg font-bold">
           <Hammer className="h-5 w-5 text-primary" /> Forge
@@ -152,9 +153,12 @@ function Index() {
               </div>
             ))}
             {busy && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="space-y-3 text-sm">
+                {streaming && <p className="whitespace-pre-wrap">{streaming.replace(/```[\s\S]*$/, "").trim()}</p>}
+                <div className="flex items-center gap-2 text-muted-foreground">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-                {streaming ? `Gerando código… ${streaming.length} caracteres` : "Pensando…"}
+                {streaming.includes("```") ? "Preparando seu site…" : "Pensando na sua ideia…"}
+                </div>
               </div>
             )}
             <div ref={endRef} />
@@ -199,7 +203,7 @@ function Index() {
             {!code ? (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Seu app aparecerá aqui.</div>
             ) : tab === "preview" ? (
-              <iframe key={frameKey} title="preview" sandbox="allow-scripts allow-forms allow-modals allow-popups" srcDoc={previewHtml(code)} className="h-full w-full border-0 bg-card" />
+              <ForgePreview key={frameKey} code={code} busy={busy} onRepair={(error) => send(`O site não abriu: ${error}. Corrija o problema e devolva o App completo, mantendo o design. Use JavaScript JSX e SVG inline para ícones.`)} />
             ) : (
               <pre className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed text-foreground"><code>{code}</code></pre>
             )}
