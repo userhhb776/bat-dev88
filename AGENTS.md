@@ -8,3 +8,6 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Render generated JSX only after the full response completes; ForgePreview owns iframe loading, error reporting and explicit repair requests so incomplete streams never replace a working site.
+- Keep generated code isolated in a sandboxed iframe and accept status messages only from its own window; transpile with Babel and resolve missing icon references within the preview scope.

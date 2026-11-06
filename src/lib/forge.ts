@@ -3,8 +3,8 @@ import JSZip from "jszip";
 export const SYSTEM_PROMPT = `Você é o Forge, um designer e engenheiro front-end sênior, caloroso e colaborativo. Você conversa em português do Brasil, como um parceiro criativo — nunca robótico.
 
 ## Como conversar
-- Antes do código, escreva 2 a 4 frases naturais: entusiasmo genuíno pela ideia, a DIREÇÃO VISUAL escolhida (ex.: "Vou seguir um estilo editorial terroso, com tons de café torrado e creme, tipografia serifada elegante") e as seções principais que vai criar.
-- Depois do código, escreva 1 a 2 frases: o que a pessoa vai ver e uma sugestão concreta de próximo passo (ex.: "Quer que eu adicione um formulário de reservas?").
+- Responda diretamente ao pedido, como numa conversa. Antes do código, no máximo uma ou duas frases curtas e específicas à ideia. Não anuncie paleta, tipografia ou lista de seções; mostre essas escolhas no resultado. Não repita uma fórmula de abertura nem entusiasmo forçado.
+- Depois do código, se necessário, comente um detalhe concreto em uma frase. Não termine toda resposta com uma pergunta ou venda de outro recurso. Se a pessoa fizer uma pergunta, converse sem gerar código desnecessariamente.
 - Em pedidos de alteração, diga em uma frase o que mudou. Nunca diga "aqui está o código". Sem listas técnicas, sem jargão.
 
 ## Direção de design (OBRIGATÓRIO — nada genérico)
@@ -122,7 +122,9 @@ export async function streamChat(
   signal?: AbortSignal,
 ) {
   if (provider === "gemini") return streamGemini(apiKey, model, history, onChunk, signal);
-  const res = await fetch(PROVIDERS[provider].url!, {
+  const endpoint = PROVIDERS[provider].url;
+  if (!endpoint) throw new Error("Fornecedor indisponível");
+  const res = await fetch(endpoint, {
     method: "POST",
     signal: signal ?? null,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey.trim()}` },
@@ -177,19 +179,50 @@ function cleanForPreview(code: string) {
 }
 
 export function previewHtml(code: string) {
-  const safe = cleanForPreview(code).replace(/<\/script/gi, "<\\/script");
-  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  const source = JSON.stringify(cleanForPreview(code)).replace(/</g, "\\u003c");
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
 </head><body><div id="root"></div>
-<script>document.addEventListener('error',function(e){var t=e.target;if(t&&t.tagName==='IMG'&&!t.dataset.fb){t.dataset.fb=1;t.src='https://picsum.photos/seed/'+encodeURIComponent((t.alt||'img').slice(0,20))+'/1200/800';}},true);</script>
-<script>window.onerror=function(m){document.body.innerHTML='<pre style="color:#b91c1c;padding:16px;white-space:pre-wrap;font:13px monospace">'+m+'</pre>'}</script>
-<script type="text/babel" data-presets="react">
-const {useState,useEffect,useRef,useMemo,useCallback,useReducer,Fragment}=React;
-${safe}
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+<script>
+(function(){
+  function notify(type,message){parent.postMessage({source:'forge-preview',type:type,message:message||''},'*');}
+  window.addEventListener('error',function(e){if(e.target && e.target.tagName==='SCRIPT') notify('error','Não foi possível carregar os recursos do site.');});
+  window.addEventListener('unhandledrejection',function(e){notify('error',String(e.reason && e.reason.message || 'Falha ao abrir o site'));});
+  document.addEventListener('error',function(e){var t=e.target;if(t&&t.tagName==='IMG'&&!t.dataset.fb){t.dataset.fb=1;t.src='https://picsum.photos/seed/'+encodeURIComponent((t.alt||'img').slice(0,20))+'/1200/800';}},true);
+  try {
+    if(!window.React || !window.ReactDOM || !window.Babel) throw new Error('Não foi possível carregar os recursos do site.');
+    var iconCache={};
+    function icon(name){
+      if(iconCache[name]) return iconCache[name];
+      return iconCache[name]=function(props){
+        var nodes=window.lucide && window.lucide.icons && window.lucide.icons[name];
+        var fallback=[['circle',{cx:12,cy:12,r:9}],['path',{d:'M8 12h8M12 8v8'}]];
+        return React.createElement('svg',Object.assign({xmlns:'http://www.w3.org/2000/svg',width:24,height:24,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:2,strokeLinecap:'round',strokeLinejoin:'round','aria-hidden':true},props),
+          (nodes||fallback).map(function(node,i){return React.createElement(node[0],Object.assign({key:i},node[1]));}));
+      };
+    }
+    var globals=Object.assign({React:React,ReactDOM:ReactDOM},React);
+    var scope=new Proxy(globals,{
+      has:function(_,key){return key!==Symbol.unscopables && (key in globals || (typeof key==='string' && /^[A-Z]/.test(key) && !(key in window)));},
+      get:function(target,key){if(key===Symbol.unscopables) return undefined;return key in target ? target[key] : icon(key);}
+    });
+    var compiled=Babel.transform(${source},{presets:[['react',{runtime:'classic'}]],filename:'App.jsx'}).code;
+    var App=new Function('scope','with(scope){'+compiled+';return typeof App !== "undefined" ? App : undefined;}')(scope);
+    if(typeof App!=='function') throw new Error('O código gerado não contém um aplicativo válido.');
+    class Boundary extends React.Component {
+      constructor(props){super(props);this.state={failed:false};}
+      static getDerivedStateFromError(){return {failed:true};}
+      componentDidCatch(error){notify('error',String(error.message));}
+      render(){return this.state.failed ? null : this.props.children;}
+    }
+    function Ready(){React.useEffect(function(){notify('ready');},[]);return null;}
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Boundary,null,React.createElement(App),React.createElement(Ready)));
+  }catch(error){notify('error',String(error.message));}
+})();
 </script></body></html>`;
 }
 

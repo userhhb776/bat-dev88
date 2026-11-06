@@ -1,0 +1,49 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, LoaderCircle, RotateCw, Wrench } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { previewHtml } from "@/lib/forge";
+
+export function ForgePreview({ code, onRepair, busy }: { code: string; onRepair: (error: string) => void; busy: boolean }) {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [error, setError] = useState("");
+  const html = useMemo(() => previewHtml(code), [code]);
+
+  useEffect(() => {
+    setState("loading");
+    setError("");
+    const receive = (event: MessageEvent) => {
+      if (event.source !== frame.current?.contentWindow || event.data?.source !== "forge-preview") return;
+      if (event.data.type === "ready") setState((previous) => previous === "error" ? previous : "ready");
+      if (event.data.type === "error") {
+        setState("error");
+        setError(String(event.data.message).slice(0, 500));
+      }
+    };
+    window.addEventListener("message", receive);
+    const timeout = window.setTimeout(() => {
+      setState((previous) => previous === "loading" ? "error" : previous);
+      setError((previous) => previous || "O site demorou demais para abrir.");
+    }, 30000);
+    return () => { window.removeEventListener("message", receive); window.clearTimeout(timeout); };
+  }, [html, attempt]);
+
+  return (
+    <div className="relative h-full w-full">
+      <iframe ref={frame} key={attempt} title="preview" sandbox="allow-scripts allow-forms allow-modals allow-popups" srcDoc={html} className="h-full w-full border-0 bg-card" />
+      {state !== "ready" && (
+        <div role="status" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background p-6 text-center">
+          {state === "loading" ? <><LoaderCircle className="h-6 w-6 animate-spin text-primary motion-reduce:animate-none" /><p className="text-sm">Abrindo seu site…</p></> : <>
+            <AlertCircle className="h-6 w-6 text-destructive" />
+            <p className="text-sm">O site não abriu. Vamos tentar de novo?</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}><RotateCw /> Recarregar</Button>
+              <Button size="sm" disabled={busy} onClick={() => onRepair(error)}><Wrench /> Corrigir site</Button>
+            </div>
+          </>}
+        </div>
+      )}
+    </div>
+  );
+}
