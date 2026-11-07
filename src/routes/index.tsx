@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { Download, Eye, Code2, Send, Square, Hammer, RotateCw, Plus, ArrowLeft, MessageCircle, WandSparkles, FolderOpen, Pencil, Trash2, Upload, Rocket, Github, Check, X, ExternalLink } from "lucide-react";
+import { Download, Eye, Code2, Send, Square, RotateCw, Plus, ArrowLeft, MessageCircle, WandSparkles, FolderOpen, Pencil, Trash2, Upload, Rocket, Github, Check, X, ExternalLink } from "lucide-react";
 import { applyEdits, downloadZip, extractCode, wantsBuild, type VisualEdit } from "@/lib/forge";
 import { generateSite, integrationStatus, publishVercel, saveGitHub } from "@/lib/forge.functions";
 import { deleteProject, exportBackup, listProjects, newProject, parseBackup, saveProject, type Project } from "@/lib/projects";
