@@ -42,3 +42,10 @@ describe("BatDev rules", () => {
     expect(out.missed).toBe(1);
   });
 });
+
+import { parseDecisions as pd, extractCode as ec } from "@/lib/forge";
+describe("decisions", () => {
+  const reply = "Ok.\n```decisoes\ncor: #112233 fundo\narquivo: App.jsx — topo\n```\n```jsx\nfunction App(){return <div/>}\n```";
+  it("reads design decisions", () => { expect(pd(reply)).toEqual([{ kind: "cor", text: "#112233 fundo" }, { kind: "arquivo", text: "App.jsx — topo" }]); });
+  it("ignores decisions when extracting code", () => { expect(ec(reply)).toBe("function App(){return <div/>}"); });
+});
