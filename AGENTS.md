@@ -16,3 +16,6 @@
 - Conversation mode sends code-free recent history with a small output budget; construction uses the latest saved source as its edit basis and never replaces it with incomplete output.
 - Vercel publishing and GitHub saving run in password-protected server functions with VERCEL_TOKEN and GITHUB_TOKEN env vars; GitHub saves each built version as one commit via the Git Data API to a private repo stored on the project.
 - Visual edits in the preview are captured inside the iframe and applied to the JSX source by exact text/URL replacement; unmatched edits are reported, never guessed.
+- Project library syncs to the user's own Supabase via a private Storage bucket (one JSON per project) through password-session server functions using the admin client; IndexedDB stays the offline copy, newest updatedAt wins. Why: avoids schema migrations and Supabase Auth email flows.
+- Login compares FORGE_EMAIL + FORGE_LOGIN_PASSWORD (fallback FORGE_PASSWORD) server-side; no Supabase Auth, so no verification codes.
+- Build replies carry a ```decisoes block (kind: text lines) rendered as a design-decision timeline; extractCode ignores it.
