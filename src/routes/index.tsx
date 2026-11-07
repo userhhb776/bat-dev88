@@ -42,7 +42,7 @@ function Index() {
     if (!text.trim() || busy || !loaded) return;
     const project = active ?? newProject(text);
     const mode = forceBuild ? "build" : project.mode;
-    const pending: Project = { ...project, mode, messages: [...project.messages, { role: "user", text: text.trim() }], updatedAt: new Date().toISOString() };
+    const pending: Project = { ...project, title: project.messages.length === 0 && project.title === "Novo projeto" ? text.trim().slice(0, 64) : project.title, mode, messages: [...project.messages, { role: "user", text: text.trim() }], updatedAt: new Date().toISOString() };
     setActive(pending); setInput(""); setBusy(true); setNotice(""); await persist(pending);
     const id = ++requestId.current;
     try {
