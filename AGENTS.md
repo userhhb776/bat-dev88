@@ -11,3 +11,6 @@
 
 - Render generated JSX only after the full response completes; ForgePreview owns iframe loading, error reporting and explicit repair requests so incomplete streams never replace a working site.
 - Keep generated code isolated in a sandboxed iframe and accept status messages only from its own window; transpile with Babel and resolve missing icon references within the preview scope.
+- Persist the project library in IndexedDB with validated versioned JSON backups; no hosted database is required for the Forge workspace.
+- Call DeepSeek only through password-session-protected TanStack server functions using DEEPSEEK_API_KEY, FORGE_PASSWORD and FORGE_SESSION_SECRET environment variables; portable server configuration avoids proprietary gateways and Cloud auth dependencies.
+- Conversation mode sends code-free recent history with a small output budget; construction uses the latest saved source as its edit basis and never replaces it with incomplete output.

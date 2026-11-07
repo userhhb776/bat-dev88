@@ -5,7 +5,7 @@ import { buildPrompt, prepareHistory } from "./forge";
 
 const privateAccess = createMiddleware({ type: "function" }).server(async ({ next }) => {
   const secret = process.env['FORGE_SESSION_SECRET'];
-  if (!secret) throw new Error("L’accès privé n’est pas configuré.");
+  if (!secret) throw new Error("O acesso privado não está configurado.");
   const session = await useSession<{ unlocked: boolean }>({ name: "forge_session", password: secret });
   if (!session.data.unlocked) throw new Error("Abra o Forge com sua senha para continuar.");
   return next();
