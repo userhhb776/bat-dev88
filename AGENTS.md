@@ -14,3 +14,5 @@
 - Persist the project library in IndexedDB with validated versioned JSON backups; no hosted database is required for the Forge workspace.
 - Call DeepSeek only through password-session-protected TanStack server functions using DEEPSEEK_API_KEY, FORGE_PASSWORD and FORGE_SESSION_SECRET environment variables; portable server configuration avoids proprietary gateways and Cloud auth dependencies.
 - Conversation mode sends code-free recent history with a small output budget; construction uses the latest saved source as its edit basis and never replaces it with incomplete output.
+- Vercel publishing and GitHub saving run in password-protected server functions with VERCEL_TOKEN and GITHUB_TOKEN env vars; GitHub saves each built version as one commit via the Git Data API to a private repo stored on the project.
+- Visual edits in the preview are captured inside the iframe and applied to the JSX source by exact text/URL replacement; unmatched edits are reported, never guessed.

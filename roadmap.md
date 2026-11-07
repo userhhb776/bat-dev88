@@ -1,9 +1,9 @@
 # Tasks
-- [x] Add local project library, autosave, reopen, rename, delete and backup export/import.
-- [x] Add economical conversation mode and current-date-aware generation.
-- [x] Add real DeepSeek balance display without fabricated capacity percentages.
-- [x] Keep data independent of Lovable Cloud and protect provider credentials.
-- [x] Verify project persistence and conversation/build flows on mobile and desktop.
+- [x] Rebrand to BatDev with tactical dark/yellow identity.
+- [x] Mobile-first generation rules and automatic build-intent detection.
+- [x] Visual editor (pencil) for texts and images in the preview.
+- [x] Vercel one-click publish and automatic GitHub save (server-side tokens).
+- [ ] Add VERCEL_TOKEN and GITHUB_TOKEN (waiting on user).
 
-## Deferred scope
-Uploads, external database connector, GitHub and Vercel integration belong to a later phase, not this delivery.
+## Later
+Uploads of images/videos, image analysis, external Supabase connector.
