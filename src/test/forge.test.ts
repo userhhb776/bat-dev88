@@ -49,3 +49,10 @@ describe("decisions", () => {
   it("reads design decisions", () => { expect(pd(reply)).toEqual([{ kind: "cor", text: "#112233 fundo" }, { kind: "arquivo", text: "App.jsx — topo" }]); });
   it("ignores decisions when extracting code", () => { expect(ec(reply)).toBe("function App(){return <div/>}"); });
 });
+
+import { missingComponents } from "@/lib/forge";
+describe("export icons", () => {
+  it("declares undeclared icon tags for the Vercel build, but not local components", () => {
+    expect(missingComponents(`function Card(){return <Star/>} function App(){return <div><Card/><ShoppingBag className="x"/></div>}`).sort()).toEqual(["ShoppingBag", "Star"]);
+  });
+});
