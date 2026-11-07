@@ -34,15 +34,22 @@ export const generateSite = createServerFn({ method: "POST" }).middleware([priva
   const key = process.env['DEEPSEEK_API_KEY'];
   if (!key) return { text: "", error: "Configure a chave DeepSeek no seu servidor." };
   try {
-    const response = await fetch("https://api.deepseek.com/chat/completions", {
-      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "deepseek-chat", max_tokens: data.mode === "chat" ? 2000 : 8192, temperature: 0.7,
-        messages: [{ role: "system", content: buildPrompt(data.mode, new Date(), data.code) }, ...prepareHistory(data.history, data.mode)] }),
-    });
-    if (!response.ok) return { text: "", error: response.status === 402 ? "O saldo DeepSeek acabou. Recarregue sua conta." : `O DeepSeek não respondeu (${response.status}). Tente novamente.` };
-    const result = await response.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[] };
-    if (result.choices?.[0]?.finish_reason === "length") return { text: "", error: "A resposta ficou incompleta. Peça uma versão mais enxuta; o site anterior foi preservado." };
-    return { text: result.choices?.[0]?.message?.content ?? "", error: "" };
+    const base = [{ role: "system", content: buildPrompt(data.mode, new Date(), data.code) }, ...prepareHistory(data.history, data.mode)];
+    let text = "";
+    // DeepSeek limita cada resposta a 8192 tokens; quando corta, pedimos para continuar de onde parou.
+    for (let round = 0; round < 4; round++) {
+      const messages = round === 0 ? base : [...base, { role: "assistant", content: text }, { role: "user", content: "Continue EXATAMENTE do último caractere, sem repetir nada e sem comentários, até fechar o bloco de código." }];
+      const response = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "deepseek-chat", max_tokens: data.mode === "chat" ? 2000 : 8192, temperature: 0.7, messages }),
+      });
+      if (!response.ok) return { text: "", error: response.status === 402 ? "O saldo DeepSeek acabou. Recarregue sua conta." : `O DeepSeek não respondeu (${response.status}). Tente novamente.` };
+      const result = await response.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[] };
+      text += result.choices?.[0]?.message?.content ?? "";
+      if (result.choices?.[0]?.finish_reason !== "length" || data.mode === "chat") break;
+      if (round === 3) return { text: "", error: "O site ficou grande demais. Peça em partes; o site anterior foi preservado." };
+    }
+    return { text, error: "" };
   } catch { return { text: "", error: "A conexão com o DeepSeek falhou. Tente novamente." }; }
 });
 export const getBalance = createServerFn({ method: "GET" }).middleware([privateAccess]).handler(async () => {
