@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { Download, Eye, Code2, Send, Square, RotateCw, Plus, ArrowLeft, MessageCircle, WandSparkles, FolderOpen, Pencil, Trash2, Upload, Rocket, Github, Check, X, ExternalLink } from "lucide-react";
-import { applyEdits, downloadZip, extractCode, parseDecisions, wantsBuild, type VisualEdit } from "@/lib/forge";
-import { cloudDelete, cloudList, cloudSave, generateSite, integrationStatus, publishVercel, saveGitHub } from "@/lib/forge.functions";
+import { Download, Eye, Code2, Send, Square, RotateCw, Plus, ArrowLeft, MessageCircle, WandSparkles, FolderOpen, Pencil, Trash2, Upload, Rocket, Github, Check, X, ExternalLink, Paperclip, LoaderCircle } from "lucide-react";
+import { applyEdits, downloadZip, extractCode, parseDecisions, slugify, wantsBuild, type VisualEdit } from "@/lib/forge";
+import { cloudDelete, cloudList, cloudSave, uploadFile, integrationStatus, publishVercel, saveGitHub } from "@/lib/forge.functions";
 import { deleteProject, exportBackup, listProjects, newProject, parseBackup, saveProject, type Project } from "@/lib/projects";
 import { ForgePreview } from "@/components/forge-preview";
 import { ForgeAccess } from "@/components/forge-access";
@@ -21,7 +21,11 @@ export const Route = createFileRoute("/")({
 });
 const chatText = (text: string) => text.replace(/```[\s\S]*?(```|$)/g, "\n").replace(/\n{3,}/g, "\n\n").trim() || "Site atualizado.";
 function Index() {
-  const generate = useServerFn(generateSite);
+  const [live, setLive] = useState("");
+  const [publishName, setPublishName] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<{ name: string; text: string }[]>([]), [attaching, setAttaching] = useState(false);
+  const attachRef = useRef<HTMLInputElement>(null);
+  const uploadAsset = useServerFn(uploadFile);
   const [projects, setProjects] = useState<Project[]>([]), [active, setActive] = useState<Project | null>(null);
   const [loaded, setLoaded] = useState(false), [input, setInput] = useState(""), [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(""), [saved, setSaved] = useState(""), [balanceRefresh, setBalanceRefresh] = useState(0);
@@ -70,8 +74,10 @@ function Index() {
   const goLive = async () => {
     if (!active?.code) return;
     if (!links.vercel) { setNotice("Falta conectar a Vercel. Me envie o token no chat do Lovable para eu deixar integrado."); return; }
+    if (publishName === null) { setPublishName(active.siteName ?? slugify(active.title).slice(0, 30)); return; }
+    const name = slugify(publishName).slice(0, 50); setPublishName(null);
     setShipping("vercel"); setNotice("Publicando na Vercel…");
-    try { const result = await publish({ data: { code: active.code, name: active.title } }); if (result.error) setNotice(result.error); else { update({ siteUrl: result.url }); setNotice(`Publicado! O site fica no ar em instantes: ${result.url}`); } }
+    try { const result = await publish({ data: { code: active.code, name, exact: true } }); if (result.error) setNotice(result.error); else { update({ siteUrl: result.url, siteName: name }); setNotice(`Publicado! O site fica no ar em instantes: ${result.url}`); } }
     catch { setNotice("A publicação não terminou. Tente novamente."); } finally { setShipping(""); }
   };
   const saveEdits = () => {
@@ -83,16 +89,43 @@ function Index() {
     if (result.code !== active.code) void syncGitHub(next);
   };
   const open = (project: Project) => { setEditing(false); setEdits([]); setActive(project); setInput(""); setNotice(""); setSaved("Salvo neste navegador"); setMView("chat"); setFrameKey(k => k + 1); };
-  const send = async (text: string, forceBuild = false) => {
-    if (!text.trim() || busy || !loaded) return;
+  const attach = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setAttaching(true);
+    for (const file of Array.from(files).slice(0, 6)) {
+      try {
+        if (/^(text\/|application\/json)/.test(file.type) || /\.(txt|md|csv|json|html|css|js|jsx)$/i.test(file.name)) {
+          const content = (await file.text()).slice(0, 60000);
+          setAttachments(a => [...a, { name: file.name, text: `Arquivo anexado "${file.name}":\n${content}` }]);
+        } else if (/^(image|video)\//.test(file.type)) {
+          if (file.size > 8_000_000) { setNotice(`${file.name} passa de 8 MB.`); continue; }
+          const base64 = await new Promise<string>((ok, fail) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] ?? ""); r.onerror = fail; r.readAsDataURL(file); });
+          const result = await uploadAsset({ data: { name: file.name, type: file.type, base64 } });
+          if (result.error) { setNotice(result.error); continue; }
+          setAttachments(a => [...a, { name: file.name, text: `${file.type.startsWith("video") ? "Vídeo" : "Imagem"} enviada pelo usuário ("${file.name}"), use exatamente esta URL no site: ${result.url}` }]);
+        } else setNotice(`Ainda não leio arquivos do tipo ${file.name.split(".").pop()}.`);
+      } catch { setNotice(`Não foi possível anexar ${file.name}.`); }
+    }
+    setAttaching(false);
+  };
+  const send = async (raw: string, forceBuild = false) => {
+    if ((!raw.trim() && !attachments.length) || busy || !loaded || attaching) return;
+    const text = [raw.trim() || "Use os arquivos anexados.", ...attachments.map(a => a.text)].join("\n\n");
+    setAttachments([]);
     const project = active ?? newProject(text);
     const mode = forceBuild || wantsBuild(text, !!project.code) ? "build" : project.mode;
     const pending: Project = { ...project, title: project.messages.length === 0 && project.title === "Novo projeto" ? text.trim().slice(0, 64) : project.title, mode, messages: [...project.messages, { role: "user", text: text.trim() }], updatedAt: new Date().toISOString() };
     setActive(pending); setInput(""); setBusy(true); setNotice(""); await persist(pending);
     const id = ++requestId.current;
     try {
-      const result = await generate({ data: { mode, code: project.code, history: pending.messages } });
-      if (id !== requestId.current) return;
+      const response = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, code: project.code, history: pending.messages }) });
+      if (!response.ok || !response.body) { setNotice((await response.text().catch(() => "")) || "Não foi possível iniciar a criação."); return; }
+      const reader = response.body.getReader(), decoder = new TextDecoder();
+      let full = "";
+      for (;;) { const { done, value } = await reader.read(); if (done || id !== requestId.current) break; full += decoder.decode(value, { stream: true }); setLive(full); }
+      if (id !== requestId.current) { void reader.cancel(); return; }
+      const failure = full.match(/\[\[BATDEV_ERRO:([\s\S]*?)\]\]/);
+      const result = { text: full.replace(/\n?\[\[BATDEV_ERRO:[\s\S]*?\]\]/g, ""), error: failure && !extractCode(full) ? failure[1] : "" };
       if (result.error) { setNotice(result.error); return; }
       if (!result.text.trim()) { setNotice("A IA retornou uma resposta vazia. Tente novamente."); return; }
       const code = mode === "build" ? extractCode(result.text) : null;
@@ -101,12 +134,14 @@ function Index() {
       setActive(completed); await persist(completed);
       if (code) { setTab("preview"); setMView("app"); setFrameKey(k => k + 1); void syncGitHub(completed); }
     } catch { if (id === requestId.current) setNotice("A criação não terminou. Seu trabalho anterior continua salvo."); }
-    finally { if (id === requestId.current) setBusy(false); setBalanceRefresh(k => k + 1); }
+    finally { if (id === requestId.current) { setBusy(false); setLive(""); } setBalanceRefresh(k => k + 1); }
   };
   const composer = <form onSubmit={e => { e.preventDefault(); void send(input); }} className="border-t border-border p-3">
     {active && <div className="mb-2 flex gap-1" role="group" aria-label="Modo de criação">{(["chat", "build"] as const).map(mode => <Button key={mode} type="button" size="sm" variant={active.mode === mode ? "secondary" : "ghost"} aria-pressed={active.mode === mode} disabled={busy} onClick={() => update({ mode })}>{mode === "chat" ? <MessageCircle/> : <WandSparkles/>}{mode === "chat" ? "Conversar" : "Construir"}</Button>)}</div>}
-    <div className="flex items-end gap-2 rounded-lg border border-border bg-background p-2 focus-within:border-primary"><textarea aria-label="Mensagem" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(input); } }} rows={2} placeholder={active ? (active.mode === "chat" ? "Vamos pensar na sua ideia…" : "O que vamos criar ou mudar?") : "Qual é a sua ideia?"} className="min-w-0 flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"/>
-      {busy ? <Button type="button" size="icon" variant="secondary" aria-label="Parar geração" onClick={() => { requestId.current++; setBusy(false); setNotice("Geração interrompida aqui; a solicitação já enviada pode ser cobrada pelo DeepSeek."); }}><Square className="h-4 w-4"/></Button> : <Button size="icon" type="submit" aria-label="Enviar mensagem" disabled={!input.trim() || !loaded}><Send className="h-4 w-4"/></Button>}
+    {(attachments.length > 0 || attaching) && <div className="mb-2 flex flex-wrap gap-1.5">{attachments.map((a, i) => <span key={i} className="flex max-w-full items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-xs"><Paperclip className="h-3 w-3 shrink-0"/><span className="truncate">{a.name}</span><button type="button" aria-label={`Remover ${a.name}`} onClick={() => setAttachments(list => list.filter((_, j) => j !== i))}><X className="h-3 w-3"/></button></span>)}{attaching && <span className="flex items-center gap-1 text-xs text-muted-foreground"><LoaderCircle className="h-3 w-3 animate-spin"/> Enviando…</span>}</div>}
+    <input ref={attachRef} type="file" multiple accept="image/*,video/*,.txt,.md,.csv,.json,.html,.css,.js,.jsx" className="hidden" onChange={e => { void attach(e.target.files); e.target.value = ""; }}/>
+    <div className="flex items-end gap-2 rounded-lg border border-border bg-background p-2 focus-within:border-primary"><Button type="button" size="icon" variant="ghost" aria-label="Anexar arquivo" disabled={busy || attaching} onClick={() => attachRef.current?.click()}><Paperclip className="h-4 w-4"/></Button><textarea aria-label="Mensagem" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(input); } }} rows={2} placeholder={active ? (active.mode === "chat" ? "Vamos pensar na sua ideia…" : "O que vamos criar ou mudar?") : "Qual é a sua ideia?"} className="min-w-0 flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"/>
+      {busy ? <Button type="button" size="icon" variant="secondary" aria-label="Parar geração" onClick={() => { requestId.current++; setBusy(false); setNotice("Geração interrompida aqui; a solicitação já enviada pode ser cobrada pelo DeepSeek."); }}><Square className="h-4 w-4"/></Button> : <Button size="icon" type="submit" aria-label="Enviar mensagem" disabled={(!input.trim() && !attachments.length) || !loaded || attaching}><Send className="h-4 w-4"/></Button>}
     </div></form>;
   return <div className="flex h-dvh flex-col bg-background text-foreground">
     <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-3 md:px-5"><div className="flex min-w-0 items-center gap-2">{active && <Button variant="ghost" size="icon" aria-label="Meus projetos" disabled={busy} onClick={() => { setActive(null); setInput(""); }}><ArrowLeft className="h-4 w-4"/></Button>}<BatMark/><span className="font-display text-lg font-bold tracking-wider">BAT<span className="text-primary">DEV</span></span></div><div className="flex items-center gap-1 sm:gap-2"><ForgeBalance refresh={balanceRefresh}/>{active?.code && <Button variant="outline" size="sm" aria-label="Salvar no GitHub" disabled={!!shipping} onClick={() => active && (links.github ? syncGitHub(active, true) : setNotice("Falta conectar o GitHub. Me envie o token no chat do Lovable para eu deixar integrado."))}><Github className="h-4 w-4"/><span className="hidden lg:inline">{shipping === "github" ? "Salvando…" : "GitHub"}</span></Button>}{active?.code && <Button size="sm" aria-label="Publicar na Vercel" disabled={!!shipping} onClick={goLive}><Rocket className="h-4 w-4"/><span className="hidden sm:inline">{shipping === "vercel" ? "Publicando…" : "Publicar"}</span></Button>}{active?.code && <Button variant="outline" size="sm" aria-label="Baixar projeto ZIP" onClick={() => downloadZip(active.code)}><Download className="h-4 w-4"/><span className="hidden sm:inline">ZIP</span></Button>}</div></header>
@@ -117,9 +152,10 @@ function Index() {
       {!loaded ? <p className="text-sm text-muted-foreground">Abrindo projetos…</p> : projects.length === 0 ? <div className="border-y border-border py-9 text-sm text-muted-foreground">Seu primeiro projeto começa com uma conversa.</div> : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{projects.map(project => <article key={project.id} className="overflow-hidden rounded-lg border border-border bg-card"><Button variant="ghost" onClick={() => open(project)} className="h-auto w-full flex-col items-start gap-0 rounded-none p-0 text-left"><div className="flex aspect-[2/1] w-full items-center justify-center border-b border-border bg-muted">{project.code ? <Code2 className="h-10 w-10 text-primary"/> : <MessageCircle className="h-10 w-10 text-muted-foreground"/>}</div><div className="w-full px-4 pt-4"><h3 className="truncate text-base font-semibold">{project.title}</h3><p className="mt-2 truncate text-xs font-normal text-muted-foreground">{chatText(project.messages.at(-1)?.text ?? "Conversa em aberto")}</p></div></Button><div className="flex items-center justify-between p-4 pt-3"><time className="text-xs text-muted-foreground">{new Date(project.updatedAt).toLocaleDateString("pt-BR")}</time><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Renomear ${project.title}`} onClick={() => { setRenameId(project.id); setRenameText(project.title); }}><Pencil className="h-3.5 w-3.5"/></Button><Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Excluir ${project.title}`} onClick={() => setDeleteId(project.id)}><Trash2 className="h-3.5 w-3.5"/></Button></div></div></article>)}</div>}
       <p className="mt-5 text-xs text-muted-foreground">Sincronizados com a sua nuvem Supabase · abra em qualquer aparelho com seu login.</p></section>
     </div></main> : <div className="flex min-h-0 flex-1">
-      <aside className={`${mView === "chat" ? "flex" : "hidden"} w-full shrink-0 flex-col border-r border-border bg-card md:flex md:w-[380px]`}><div className="border-b border-border px-4 py-3"><h1 className="truncate text-sm font-semibold">{active.title}</h1><p className="mt-1 text-xs text-muted-foreground">{saved}</p></div><div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">{!active.messages.length && <h2 className="pt-5 text-xl font-semibold">O que vamos construir?</h2>}{active.messages.map((message,i) => <div key={i} className={message.role === "user" ? "ml-6 whitespace-pre-wrap break-words rounded-lg bg-secondary px-3 py-2 text-sm" : "whitespace-pre-wrap break-words text-sm leading-relaxed"}>{message.role === "model" && <Decisions text={message.text}/>}{message.role === "user" ? message.text : chatText(message.text)}{message.role === "model" && extractCode(message.text) && <Button size="sm" variant="outline" className="mt-3 md:hidden" onClick={() => { setMView("app"); setTab("preview"); }}><Eye/> Abrir Preview</Button>}</div>)}{busy && <WorkLog chat={active.mode === "chat"}/>}<div ref={endRef}/></div>{composer}</aside>
+      <aside className={`${mView === "chat" ? "flex" : "hidden"} w-full shrink-0 flex-col border-r border-border bg-card md:flex md:w-[380px]`}><div className="border-b border-border px-4 py-3"><h1 className="truncate text-sm font-semibold">{active.title}</h1><p className="mt-1 text-xs text-muted-foreground">{saved}</p></div><div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">{!active.messages.length && <h2 className="pt-5 text-xl font-semibold">O que vamos construir?</h2>}{active.messages.map((message,i) => <div key={i} className={message.role === "user" ? "ml-6 whitespace-pre-wrap break-words rounded-lg bg-secondary px-3 py-2 text-sm" : "whitespace-pre-wrap break-words text-sm leading-relaxed"}>{message.role === "model" && <Decisions text={message.text}/>}{message.role === "user" ? message.text : chatText(message.text)}{message.role === "model" && extractCode(message.text) && <Button size="sm" variant="outline" className="mt-3 md:hidden" onClick={() => { setMView("app"); setTab("preview"); }}><Eye/> Abrir Preview</Button>}</div>)}{busy && <WorkLog chat={active.mode === "chat"} live={live}/>}<div ref={endRef}/></div>{composer}</aside>
       <main className={`${mView === "app" ? "flex" : "hidden"} min-w-0 flex-1 flex-col md:flex`}><div className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [&>*]:shrink-0"><Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMView("chat")}><ArrowLeft className="h-4 w-4"/> Chat</Button>{(["preview", "code"] as const).map(value => <Button key={value} size="sm" variant={tab === value ? "secondary" : "ghost"} onClick={() => setTab(value)}>{value === "preview" ? <Eye/> : <Code2/>}{value === "preview" ? "Preview" : "Código"}</Button>)}{active.code && tab === "preview" && !editing && <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Recarregar preview" onClick={() => setFrameKey(k => k + 1)}><RotateCw className="h-4 w-4"/></Button>}{active.code && tab === "preview" && (editing ? <div className="ml-auto flex items-center gap-1"><span className="hidden text-xs text-muted-foreground sm:inline">{edits.length ? `${edits.length} alteração(ões)` : "Toque num texto ou imagem"}</span><Button variant="ghost" size="sm" onClick={() => { setEditing(false); setEdits([]); setFrameKey(k => k + 1); }}><X className="h-4 w-4"/> Cancelar</Button><Button size="sm" disabled={!edits.length} onClick={saveEdits}><Check className="h-4 w-4"/> Salvar</Button></div> : <div className="ml-auto flex items-center gap-1">{active.siteUrl && <Button asChild variant="ghost" size="icon" className="h-7 w-7" aria-label="Abrir site publicado"><a href={active.siteUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4"/></a></Button>}<Button variant="outline" size="sm" disabled={busy} aria-label="Editar visualmente" onClick={() => setEditing(true)}><Pencil className="h-4 w-4"/><span className="hidden min-[400px]:inline">Editar</span></Button></div>)}</div><div className="min-h-0 flex-1 bg-muted">{!active.code ? <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center"><BatMark className="h-10 w-10"/><h2 className="font-display text-xl font-semibold uppercase">Da conversa à criação.</h2><Button disabled={busy || !active.messages.length} onClick={() => send("Construa o projeto que planejamos nesta conversa.", true)}><WandSparkles/> Construir projeto</Button></div> : tab === "preview" ? <ForgePreview key={frameKey} code={active.code} busy={busy} editing={editing} onEdit={edit => setEdits(list => [...list, edit])} onRepair={error => send(`Corrija este erro sem mudar o design: ${error}. Devolva o App completo.`, true)}/> : <pre className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed"><code>{active.code}</code></pre>}</div></main>
     </div>}
+    {publishName !== null && <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-5 backdrop-blur-sm"><form role="dialog" aria-modal="true" aria-label="Endereço do site" onSubmit={e => { e.preventDefault(); void goLive(); }} className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-5"><h2 className="text-lg font-semibold">Endereço do seu site</h2><div className="flex items-center rounded-md border border-border bg-background pr-2 focus-within:border-primary"><input autoFocus aria-label="Nome do endereço" value={publishName} onChange={e => setPublishName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 50))} className="min-w-0 flex-1 bg-transparent p-2 outline-none"/><span className="text-sm text-muted-foreground">.vercel.app</span></div><p className="break-all text-xs text-muted-foreground">Ficará em https://{slugify(publishName || "site")}.vercel.app — se o nome já for de outra pessoa na Vercel, ela adiciona um final extra.</p><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setPublishName(null)}>Cancelar</Button><Button type="submit" disabled={!publishName.trim()}><Rocket className="h-4 w-4"/> Publicar</Button></div></form></div>}
     {(renameId || deleteId) && <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-5 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-label={renameId ? "Renomear projeto" : "Excluir projeto"} className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-5"><h2 className="text-lg font-semibold">{renameId ? "Renomear projeto" : "Excluir este projeto?"}</h2>{renameId ? <input aria-label="Nome do projeto" value={renameText} onChange={e => setRenameText(e.target.value)} className="w-full rounded-md border border-border bg-background p-2"/> : <p className="text-sm text-muted-foreground">Esta ação remove a conversa e o site deste navegador.</p>}<div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => { setRenameId(""); setDeleteId(""); }}>Cancelar</Button><Button disabled={!!renameId && !renameText.trim()} variant={deleteId ? "destructive" : "default"} onClick={async () => { if (renameId) { const project = projects.find(p => p.id === renameId); if (project) await persist({ ...project, title: renameText.trim(), updatedAt: new Date().toISOString() }); setRenameId(""); } else { try { await deleteProject(deleteId); void cDelete({ data: { id: deleteId } }).catch(() => {}); setProjects(p => p.filter(item => item.id !== deleteId)); setDeleteId(""); } catch { setNotice("Não foi possível excluir."); } } }}>{renameId ? "Salvar" : "Excluir"}</Button></div></div></div>}
   </div>;
 }
@@ -136,9 +172,20 @@ function BatMark({ className = "h-6 w-6" }: { className?: string }) {
 }
 
 const BUILD_STEPS = ["Lendo seu pedido", "Escolhendo paleta de cores e fontes", "Desenhando a versão para celular", "Criando o topo e o menu", "Montando as seções e os cartões", "Adicionando botões e interações", "Ajustando para telas maiores", "Revisando o código", "Finalizando o arquivo App.jsx"];
-function WorkLog({ chat }: { chat: boolean }) {
+function WorkLog({ chat, live }: { chat: boolean; live: string }) {
   const [step, setStep] = useState(0);
   useEffect(() => { if (chat) return; const t = setInterval(() => setStep(s => Math.min(s + 1, BUILD_STEPS.length - 1)), 7000); return () => clearInterval(t); }, [chat]);
+  if (live) {
+    const decisions = parseDecisions(live + (live.match(/```decis[oõ]es/i) && !/```decis[oõ]es[\s\S]*?```/i.test(live) ? "\n```" : ""));
+    const code = live.split(/```jsx/)[1] ?? "";
+    const lines = code.split("\n").length;
+    const section = [...code.matchAll(/(?:\{\/\*\s*([^*]{3,40})\s*\*\/\}|<(header|nav|section|footer|main|form)\b[^>]*?(?:id="([^"]+)")?)/g)].at(-1);
+    const where = section ? (section[1] ?? (section[3] ? `${section[2]} #${section[3]}` : section[2])) : "";
+    return <div className="space-y-2 rounded-lg border border-border bg-background/50 p-3 text-xs" aria-live="polite">
+      {decisions.map((d, i) => <div key={i} className="flex gap-2 text-muted-foreground"><span className="font-semibold uppercase text-primary">{d.kind}</span>{d.text}</div>)}
+      <div className="flex items-center gap-2 text-foreground"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary"/>{code ? `Escrevendo App.jsx — ${lines} linhas${where ? ` · agora em: ${where.trim()}` : ""}` : chat ? "Respondendo…" : "Planejando o design…"}</div>
+    </div>;
+  }
   if (chat) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-primary"/>Pensando com você…</div>;
   return <ol className="space-y-1.5 rounded-lg border border-border bg-background/50 p-3 text-xs" aria-live="polite">{BUILD_STEPS.slice(0, step + 1).map((s, i) => <li key={s} className={`flex items-center gap-2 ${i === step ? "text-foreground" : "text-muted-foreground"}`}><span className={`h-1.5 w-1.5 rounded-full ${i === step ? "animate-pulse bg-primary" : "bg-muted-foreground"}`}/>{s}{i === step ? "…" : " ✓"}</li>)}</ol>;
 }

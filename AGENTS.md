@@ -19,3 +19,6 @@
 - Project library syncs to the user's own Supabase via a private Storage bucket (one JSON per project) through password-session server functions using the admin client; IndexedDB stays the offline copy, newest updatedAt wins. Why: avoids schema migrations and Supabase Auth email flows.
 - Login compares FORGE_EMAIL + FORGE_LOGIN_PASSWORD (fallback FORGE_PASSWORD) server-side; no Supabase Auth, so no verification codes.
 - Build replies carry a ```decisoes block (kind: text lines) rendered as a design-decision timeline; extractCode ignores it.
+- Site generation streams DeepSeek output through the cookie-session-checked server route /api/generate (plain text, auto-continues on length); why: long professional builds exceeded the request timeout of non-streaming calls.
+- Exported/published projects declare undeclared JSX tags as lucide-react icons (src/icons.jsx shim); why: the preview resolves them at runtime, and the Vercel build failed without them.
+- Chat attachments: text files are inlined into the prompt; images/videos go to a public Supabase Storage bucket and their URL is given to the model. AI images use Pollinations URLs (no gateway).

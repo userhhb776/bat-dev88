@@ -2,8 +2,8 @@ import { z } from "zod";
 import type { Msg } from "./forge";
 
 export type Mode = "chat" | "build";
-export type Project = { id: string; title: string; messages: Msg[]; code: string; mode: Mode; updatedAt: string; repo?: string | undefined; repoUrl?: string | undefined; siteUrl?: string | undefined };
-const schema = z.object({ id: z.string(), title: z.string().min(1), messages: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string() })), code: z.string(), mode: z.enum(["chat", "build"]), updatedAt: z.string(), repo: z.string().optional(), repoUrl: z.string().optional(), siteUrl: z.string().optional() });
+export type Project = { id: string; title: string; messages: Msg[]; code: string; mode: Mode; updatedAt: string; repo?: string | undefined; repoUrl?: string | undefined; siteUrl?: string | undefined; siteName?: string | undefined };
+const schema = z.object({ id: z.string(), title: z.string().min(1), messages: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string() })), code: z.string(), mode: z.enum(["chat", "build"]), updatedAt: z.string(), repo: z.string().optional(), repoUrl: z.string().optional(), siteUrl: z.string().optional(), siteName: z.string().optional() });
 export function parseBackup(value: unknown): Project[] {
   return z.object({ version: z.literal(1), projects: z.array(schema) }).parse(value).projects;
 }
