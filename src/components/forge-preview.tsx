@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, LoaderCircle, RotateCw, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { previewHtml } from "@/lib/forge";
+import { previewHtml, type VisualEdit } from "@/lib/forge";
 
-export function ForgePreview({ code, onRepair, busy }: { code: string; onRepair: (error: string) => void; busy: boolean }) {
+export function ForgePreview({ code, onRepair, busy, editing = false, onEdit }: { code: string; onRepair: (error: string) => void; busy: boolean; editing?: boolean; onEdit?: (edit: VisualEdit) => void }) {
+  const editRef = useRef(onEdit); editRef.current = onEdit;
   const frame = useRef<HTMLIFrameElement>(null);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -16,6 +17,7 @@ export function ForgePreview({ code, onRepair, busy }: { code: string; onRepair:
     const receive = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow || event.data?.source !== "forge-preview") return;
       if (event.data.type === "ready") setState((previous) => previous === "error" ? previous : "ready");
+      if (event.data.type === "change") { try { editRef.current?.(JSON.parse(event.data.message)); } catch { /* ignore malformed */ } }
       if (event.data.type === "error") {
         setState("error");
         setError(String(event.data.message).slice(0, 500));
@@ -28,6 +30,8 @@ export function ForgePreview({ code, onRepair, busy }: { code: string; onRepair:
     }, 30000);
     return () => { window.removeEventListener("message", receive); window.clearTimeout(timeout); };
   }, [html, attempt]);
+
+  useEffect(() => { if (state === "ready") frame.current?.contentWindow?.postMessage({ source: "batdev-host", edit: editing }, "*"); }, [editing, state]);
 
   return (
     <div className="relative h-full w-full">
