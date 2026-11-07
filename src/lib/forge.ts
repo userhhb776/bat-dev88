@@ -11,10 +11,10 @@ export const SYSTEM_PROMPT = `Você é o Forge, um designer e engenheiro front-e
 - Escolha UMA estética marcante adequada ao tema: editorial, brutalista, luxo minimalista, retrô, orgânico, tech neon, glassmorphism, suíço, etc. Nunca o visual padrão "fundo branco + botão azul/roxo".
 - Defina uma paleta própria de 4-6 cores em HEX e use com valores arbitrários do Tailwind (bg-[#1a1410], text-[#e8d5b7]...). Proibido gradiente roxo/índigo genérico e cores padrão gray/blue/indigo do Tailwind como cor principal.
 - Tipografia com personalidade: carregue fontes do Google Fonts num useEffect que injeta um <link> no document.head (ex.: Playfair Display + Inter Tight, Space Grotesk + DM Sans, Fraunces + Manrope, Bebas Neue + Barlow). Aplique com style={{fontFamily:"'Fraunces', serif"}}. Nunca use só a fonte padrão.
-- Composição rica: hero de impacto com título grande (text-5xl a text-8xl), layouts assimétricos/bento, seções com ritmo e muito respiro, pelo menos 5 seções num site (hero, recursos/produtos, prova social/depoimentos, chamada final, rodapé).
+- Construa a experiência apropriada: ferramentas e dashboards abrem no produto funcional, não numa landing page. Sites editoriais têm ritmo e hierarquia, sem forçar seções desnecessárias. Use imagens temáticas, nunca fotos aleatórias como produto.
 - Detalhes premium: sombras suaves, bordas sutis, cantos arredondados consistentes, hover com transition e leve transform, animações de entrada (keyframes num <style> dentro do componente), ícones SVG inline elegantes.
 - Imagens reais e temáticas via https://images.unsplash.com/photo-<id>?w=1200&q=80 (use IDs que você conhece) ou https://picsum.photos/seed/<palavra>/1200/800.
-- Conteúdo realista e específico em português (nomes, preços, depoimentos críveis) — nunca "Lorem ipsum" ou "Feature 1".
+- Conteúdo específico em português, sem Lorem ipsum. Não invente depoimentos como reais, telefone ou horários. Identifique preços e nomes fictícios como demonstração na conversa.
 - Interatividade real com useState: menu mobile, abas, carrinho, filtros, modais, formulários com feedback.
 - Totalmente responsivo (mobile-first, sm/md/lg).
 
@@ -26,7 +26,7 @@ export const SYSTEM_PROMPT = `Você é o Forge, um designer e engenheiro front-e
 - Nunca entregue código preguiçoso: proibido "// resto aqui", "...", itens faltando ou botões que não fazem nada.
 
 ## Regras técnicas
-- Exatamente um bloco \`\`\`jsx com o arquivo completo.
+- Apenas ao construir: exatamente um bloco \`\`\`jsx com o arquivo completo.
 - Defina \`function App()\` como raiz. Sem import; hooks já são globais (useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment).
 - Estilo apenas com Tailwind (valores arbitrários permitidos) + um <style> opcional para keyframes/fontes.
 - Em alterações, devolva SEMPRE o arquivo COMPLETO atualizado, mantendo a mesma identidade visual.`;
@@ -38,144 +38,18 @@ export function extractCode(text: string): string | null {
   return m?.[1] ? m[1].trim() : null;
 }
 
-// Accepts a raw key or a pasted cURL snippet and returns just the key.
-export function cleanKey(input: string): string {
-  const m = input.match(/(AQ\.[A-Za-z0-9_\-.]+|AIza[A-Za-z0-9_\-]+)/);
-  return (m?.[1] ?? input).trim().replace(/^['"]|['"]$/g, "");
+export function buildPrompt(mode: "chat" | "build", date: Date, code = "") {
+  return `${SYSTEM_PROMPT}
+Data atual: ${date.toISOString().slice(0, 10)}. Use o ano ${date.getUTCFullYear()} em coleções e copyright, exceto se o usuário pedir outra data. Não alegue acesso a notícias ou à internet.
+${mode === "chat" ? "MODO CONVERSA: apenas converse e planeje. Nunca gere código, nem quando pedirem para criar. Explique brevemente que podem escolher Construir. Não envie o arquivo atual nem o reescreva. Responda em até 180 palavras, naturalmente." : "MODO CONSTRUÇÃO: implemente o pedido; devolva um único bloco jsx completo. Preserve as partes não mencionadas em alterações."}
+${mode === "build" && code ? `Site atual (base obrigatória para alterações):\n${code}` : ""}`;
 }
-
-export async function streamGemini(
-  apiKey: string,
-  model: string,
-  history: Msg[],
-  onChunk: (full: string) => void,
-  signal?: AbortSignal,
-) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
-    {
-      method: "POST",
-      signal: signal ?? null,
-      headers: { "Content-Type": "application/json", "x-goog-api-key": cleanKey(apiKey) },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: history.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
-      }),
-    },
-  );
-  if (!res.ok || !res.body) {
-    let msg = `Erro ${res.status}`;
-    try {
-      const j = await res.json();
-      msg = j?.error?.message ?? msg;
-    } catch {}
-    throw new Error(msg);
-  }
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  let full = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      try {
-        const j = JSON.parse(line.slice(5));
-        const t = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
-        full += t;
-        onChunk(full);
-      } catch {}
-    }
-  }
-  return full;
-}
-
-export type Provider = "gemini" | "groq" | "openrouter" | "deepseek";
-
-export const PROVIDERS: Record<Provider, { label: string; url?: string; keyUrl: string; placeholder: string; models: string[] }> = {
-  groq: { label: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", keyUrl: "https://console.groq.com/keys", placeholder: "gsk_…", models: ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"] },
-  openrouter: { label: "OpenRouter", url: "https://openrouter.ai/api/v1/chat/completions", keyUrl: "https://openrouter.ai/keys", placeholder: "sk-or-v1-…", models: ["cohere/north-mini-code:free", "google/gemma-4-31b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free"] },
-  deepseek: { label: "DeepSeek", url: "https://api.deepseek.com/chat/completions", keyUrl: "https://platform.deepseek.com/api_keys", placeholder: "sk-…", models: ["deepseek-chat", "deepseek-reasoner"] },
-  gemini: { label: "Gemini", keyUrl: "https://aistudio.google.com/apikey", placeholder: "AIza… ou AQ.…", models: ["gemini-3.8-flash", "gemini-flash-latest", "gemini-pro-latest"] },
-};
-
-// Built-in keys (private app, per owner's request).
-export const DEFAULT_KEYS: Record<Provider, string> = {
-  groq: "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",
-  openrouter: "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",
-  deepseek: "sk-e971b60e1ab84e09bf79f6c9fcf32609",
-  gemini: "",
-};
-
-// Fallback order: selected model first, then every other model; DeepSeek is last (reserve).
-export function fallbackChain(selected: string, keys: Record<Provider, string>): [Provider, string][] {
-  const order: Provider[] = ["groq", "openrouter", "gemini", "deepseek"];
-  const all: [Provider, string][] = order.flatMap((p) => PROVIDERS[p].models.map((m) => [p, m] as [Provider, string]));
-  const [sp, sm] = selected.split("|") as [Provider, string];
-  const chain = [[sp, sm] as [Provider, string], ...all.filter(([p, m]) => !(p === sp && m === sm))];
-  return chain.filter(([p]) => !!keys[p]);
-}
-
-export async function streamChat(
-  provider: Provider,
-  apiKey: string,
-  model: string,
-  history: Msg[],
-  onChunk: (full: string) => void,
-  signal?: AbortSignal,
-) {
-  if (provider === "gemini") return streamGemini(apiKey, model, history, onChunk, signal);
-  const endpoint = PROVIDERS[provider].url;
-  if (!endpoint) throw new Error("Fornecedor indisponível");
-  const res = await fetch(endpoint, {
-    method: "POST",
-    signal: signal ?? null,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey.trim()}` },
-    body: JSON.stringify({
-      model,
-      stream: true,
-      max_tokens: provider === "groq" ? 32000 : provider === "deepseek" ? 8192 : 16000,
-      temperature: provider === "deepseek" ? 0.7 : undefined,
-      ...(provider === "groq" ? { reasoning_effort: "low" } : {}),
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        ...history.map((m) => ({ role: m.role === "model" ? "assistant" : "user", content: m.text })),
-      ],
-    }),
-  });
-  if (!res.ok || !res.body) {
-    let msg = `Erro ${res.status}`;
-    try {
-      const j = await res.json();
-      msg = j?.error?.message ?? msg;
-    } catch {}
-    throw new Error(msg);
-  }
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  let full = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (data === "[DONE]") continue;
-      try {
-        full += JSON.parse(data)?.choices?.[0]?.delta?.content ?? "";
-        onChunk(full);
-      } catch {}
-    }
-  }
-  return full;
+export function prepareHistory(history: Msg[], mode: "chat" | "build") {
+  // Previous full sources are redundant: buildPrompt carries the current version.
+  return history.slice(mode === "chat" ? -16 : -24).map(m => ({
+    role: m.role === "model" ? "assistant" : "user",
+    content: m.text.replace(/```[\s\S]*?(```|$)/g, "[Site salvo no projeto]").trim() || "Site atualizado.",
+  }));
 }
 
 function cleanForPreview(code: string) {
