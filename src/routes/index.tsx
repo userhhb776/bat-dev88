@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { Download, Eye, Code2, Send, Square, RotateCw, Plus, ArrowLeft, MessageCircle, WandSparkles, FolderOpen, Pencil, Trash2, Upload, Rocket, Github, Check, X, ExternalLink } from "lucide-react";
 import { applyEdits, downloadZip, extractCode, parseDecisions, wantsBuild, type VisualEdit } from "@/lib/forge";
-import { cloudDelete, cloudList, cloudSave, generateSite, integrationStatus, publishVercel, saveGitHub } from "@/lib/forge.functions";
+import { cloudDelete, cloudList, cloudSave, uploadFile, integrationStatus, publishVercel, saveGitHub } from "@/lib/forge.functions";
 import { deleteProject, exportBackup, listProjects, newProject, parseBackup, saveProject, type Project } from "@/lib/projects";
 import { ForgePreview } from "@/components/forge-preview";
 import { ForgeAccess } from "@/components/forge-access";
@@ -74,8 +74,10 @@ function Index() {
   const goLive = async () => {
     if (!active?.code) return;
     if (!links.vercel) { setNotice("Falta conectar a Vercel. Me envie o token no chat do Lovable para eu deixar integrado."); return; }
+    if (publishName === null) { setPublishName(active.siteName ?? slugify(active.title).slice(0, 30)); return; }
+    const name = slugify(publishName).slice(0, 50); setPublishName(null);
     setShipping("vercel"); setNotice("Publicando na Vercel…");
-    try { const result = await publish({ data: { code: active.code, name: active.title } }); if (result.error) setNotice(result.error); else { update({ siteUrl: result.url }); setNotice(`Publicado! O site fica no ar em instantes: ${result.url}`); } }
+    try { const result = await publish({ data: { code: active.code, name, exact: true } }); if (!result.error) update({ siteName: name }); if (result.error) setNotice(result.error); else { update({ siteUrl: result.url }); setNotice(`Publicado! O site fica no ar em instantes: ${result.url}`); } }
     catch { setNotice("A publicação não terminou. Tente novamente."); } finally { setShipping(""); }
   };
   const saveEdits = () => {
@@ -87,8 +89,28 @@ function Index() {
     if (result.code !== active.code) void syncGitHub(next);
   };
   const open = (project: Project) => { setEditing(false); setEdits([]); setActive(project); setInput(""); setNotice(""); setSaved("Salvo neste navegador"); setMView("chat"); setFrameKey(k => k + 1); };
-  const send = async (text: string, forceBuild = false) => {
-    if (!text.trim() || busy || !loaded) return;
+  const attach = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setAttaching(true);
+    for (const file of Array.from(files).slice(0, 6)) {
+      try {
+        if (/^(text\/|application\/json)/.test(file.type) || /\.(txt|md|csv|json|html|css|js|jsx)$/i.test(file.name)) {
+          setAttachments(a => [...a, { name: file.name, text: `Arquivo anexado "${file.name}":\n${(file.size > 60000 ? (await file.text()).slice(0, 60000) : await file.text())}` }]);
+        } else if (/^(image|video)\//.test(file.type)) {
+          if (file.size > 8_000_000) { setNotice(`${file.name} passa de 8 MB.`); continue; }
+          const base64 = await new Promise<string>((ok, fail) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] ?? ""); r.onerror = fail; r.readAsDataURL(file); });
+          const result = await uploadAsset({ data: { name: file.name, type: file.type, base64 } });
+          if (result.error) { setNotice(result.error); continue; }
+          setAttachments(a => [...a, { name: file.name, text: `${file.type.startsWith("video") ? "Vídeo" : "Imagem"} enviada pelo usuário ("${file.name}"), use exatamente esta URL no site: ${result.url}` }]);
+        } else setNotice(`Ainda não leio arquivos do tipo ${file.name.split(".").pop()}.`);
+      } catch { setNotice(`Não foi possível anexar ${file.name}.`); }
+    }
+    setAttaching(false);
+  };
+  const send = async (raw: string, forceBuild = false) => {
+    if ((!raw.trim() && !attachments.length) || busy || !loaded || attaching) return;
+    const text = [raw.trim() || "Use os arquivos anexados.", ...attachments.map(a => a.text)].join("\n\n");
+    setAttachments([]);
     const project = active ?? newProject(text);
     const mode = forceBuild || wantsBuild(text, !!project.code) ? "build" : project.mode;
     const pending: Project = { ...project, title: project.messages.length === 0 && project.title === "Novo projeto" ? text.trim().slice(0, 64) : project.title, mode, messages: [...project.messages, { role: "user", text: text.trim() }], updatedAt: new Date().toISOString() };
