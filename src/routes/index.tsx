@@ -21,7 +21,11 @@ export const Route = createFileRoute("/")({
 });
 const chatText = (text: string) => text.replace(/```[\s\S]*?(```|$)/g, "\n").replace(/\n{3,}/g, "\n\n").trim() || "Site atualizado.";
 function Index() {
-  const generate = useServerFn(generateSite);
+  const [live, setLive] = useState("");
+  const [publishName, setPublishName] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<{ name: string; text: string }[]>([]), [attaching, setAttaching] = useState(false);
+  const attachRef = useRef<HTMLInputElement>(null);
+  const uploadAsset = useServerFn(uploadFile);
   const [projects, setProjects] = useState<Project[]>([]), [active, setActive] = useState<Project | null>(null);
   const [loaded, setLoaded] = useState(false), [input, setInput] = useState(""), [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(""), [saved, setSaved] = useState(""), [balanceRefresh, setBalanceRefresh] = useState(0);
@@ -91,8 +95,14 @@ function Index() {
     setActive(pending); setInput(""); setBusy(true); setNotice(""); await persist(pending);
     const id = ++requestId.current;
     try {
-      const result = await generate({ data: { mode, code: project.code, history: pending.messages } });
-      if (id !== requestId.current) return;
+      const response = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, code: project.code, history: pending.messages }) });
+      if (!response.ok || !response.body) { setNotice((await response.text().catch(() => "")) || "Não foi possível iniciar a criação."); return; }
+      const reader = response.body.getReader(), decoder = new TextDecoder();
+      let full = "";
+      for (;;) { const { done, value } = await reader.read(); if (done || id !== requestId.current) break; full += decoder.decode(value, { stream: true }); setLive(full); }
+      if (id !== requestId.current) { void reader.cancel(); return; }
+      const failure = full.match(/\[\[BATDEV_ERRO:([\s\S]*?)\]\]/);
+      const result = { text: full.replace(/\n?\[\[BATDEV_ERRO:[\s\S]*?\]\]/g, ""), error: failure && !extractCode(full) ? failure[1] : "" };
       if (result.error) { setNotice(result.error); return; }
       if (!result.text.trim()) { setNotice("A IA retornou uma resposta vazia. Tente novamente."); return; }
       const code = mode === "build" ? extractCode(result.text) : null;
@@ -101,7 +111,7 @@ function Index() {
       setActive(completed); await persist(completed);
       if (code) { setTab("preview"); setMView("app"); setFrameKey(k => k + 1); void syncGitHub(completed); }
     } catch { if (id === requestId.current) setNotice("A criação não terminou. Seu trabalho anterior continua salvo."); }
-    finally { if (id === requestId.current) setBusy(false); setBalanceRefresh(k => k + 1); }
+    finally { if (id === requestId.current) { setBusy(false); setLive(""); } setBalanceRefresh(k => k + 1); }
   };
   const composer = <form onSubmit={e => { e.preventDefault(); void send(input); }} className="border-t border-border p-3">
     {active && <div className="mb-2 flex gap-1" role="group" aria-label="Modo de criação">{(["chat", "build"] as const).map(mode => <Button key={mode} type="button" size="sm" variant={active.mode === mode ? "secondary" : "ghost"} aria-pressed={active.mode === mode} disabled={busy} onClick={() => update({ mode })}>{mode === "chat" ? <MessageCircle/> : <WandSparkles/>}{mode === "chat" ? "Conversar" : "Construir"}</Button>)}</div>}
