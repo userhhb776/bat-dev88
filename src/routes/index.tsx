@@ -95,7 +95,8 @@ function Index() {
     for (const file of Array.from(files).slice(0, 6)) {
       try {
         if (/^(text\/|application\/json)/.test(file.type) || /\.(txt|md|csv|json|html|css|js|jsx)$/i.test(file.name)) {
-          setAttachments(a => [...a, { name: file.name, text: `Arquivo anexado "${file.name}":\n${(file.size > 60000 ? (await file.text()).slice(0, 60000) : await file.text())}` }]);
+          const content = (await file.text()).slice(0, 60000);
+          setAttachments(a => [...a, { name: file.name, text: `Arquivo anexado "${file.name}":\n${content}` }]);
         } else if (/^(image|video)\//.test(file.type)) {
           if (file.size > 8_000_000) { setNotice(`${file.name} passa de 8 MB.`); continue; }
           const base64 = await new Promise<string>((ok, fail) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] ?? ""); r.onerror = fail; r.readAsDataURL(file); });
