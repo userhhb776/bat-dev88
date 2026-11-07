@@ -10,7 +10,7 @@ describe("Forge generation", () => {
   });
   it("avoids sending previous full sites in economical conversation mode", () => {
     const previous = 'Site pronto.\n```jsx\nfunction App(){return <h1>Private source</h1>}\n```';
-    expect(prepareHistory([{ role: "model", text: previous }], "chat")[0].content).not.toContain("Private source");
+    expect(prepareHistory([{ role: "model", text: previous }], "chat")[0]?.content).not.toContain("Private source");
     expect(buildPrompt("chat", new Date("2026-11-07"), "CURRENT_CODE")).not.toContain("CURRENT_CODE");
   });
   it("preserves the current source as the basis for build edits", () => {

@@ -22,7 +22,7 @@ export const unlockForge = createServerFn({ method: "POST" }).inputValidator(z.o
   const encoder = new TextEncoder();
   const [a, b] = await Promise.all([crypto.subtle.digest("SHA-256", encoder.encode(password)), crypto.subtle.digest("SHA-256", encoder.encode(data.password))]);
   const left = new Uint8Array(a), right = new Uint8Array(b);
-  let difference = 0; for (let i = 0; i < left.length; i++) difference |= left[i] ^ right[i];
+  let difference = 0; for (let i = 0; i < left.length; i++) difference |= (left[i] ?? 0) ^ (right[i] ?? 0);
   if (difference) return { ok: false, error: "Senha incorreta." };
   await (await useSession<{ unlocked: boolean }>({ name: "forge_session", password: secret })).update({ unlocked: true });
   return { ok: true, error: "" };
