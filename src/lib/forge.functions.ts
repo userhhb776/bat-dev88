@@ -1,13 +1,13 @@
 import { createMiddleware, createServerFn } from "@tanstack/react-start";
 import { useSession } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { buildPrompt, prepareHistory } from "./forge";
+import { buildPrompt, prepareHistory, projectFiles, slugify } from "./forge";
 
 const privateAccess = createMiddleware({ type: "function" }).server(async ({ next }) => {
   const secret = process.env['FORGE_SESSION_SECRET'];
   if (!secret) throw new Error("O acesso privado não está configurado.");
   const session = await useSession<{ unlocked: boolean }>({ name: "forge_session", password: secret });
-  if (!session.data.unlocked) throw new Error("Abra o Forge com sua senha para continuar.");
+  if (!session.data.unlocked) throw new Error("Abra o BatDev com sua senha para continuar.");
   return next();
 });
 export const accessStatus = createServerFn({ method: "GET" }).handler(async () => {
@@ -36,7 +36,7 @@ export const generateSite = createServerFn({ method: "POST" }).middleware([priva
   try {
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "deepseek-chat", max_tokens: data.mode === "chat" ? 800 : 8192, temperature: 0.7,
+      body: JSON.stringify({ model: "deepseek-chat", max_tokens: data.mode === "chat" ? 2000 : 8192, temperature: 0.7,
         messages: [{ role: "system", content: buildPrompt(data.mode, new Date(), data.code) }, ...prepareHistory(data.history, data.mode)] }),
     });
     if (!response.ok) return { text: "", error: response.status === 402 ? "O saldo DeepSeek acabou. Recarregue sua conta." : `O DeepSeek não respondeu (${response.status}). Tente novamente.` };
@@ -54,4 +54,55 @@ export const getBalance = createServerFn({ method: "GET" }).middleware([privateA
     const result = z.object({ balance_infos: z.array(z.object({ currency: z.string(), total_balance: z.string() })) }).parse(await response.json());
     return { balances: result.balance_infos.map(b => ({ currency: b.currency, total: Number(b.total_balance) })), error: "" };
   } catch { return { balances: [], error: "Saldo indisponível." }; }
+});
+const publishInput = z.object({ code: z.string().min(1).max(300000), name: z.string().min(1).max(120) });
+export const integrationStatus = createServerFn({ method: "GET" }).middleware([privateAccess]).handler(async () => ({
+  vercel: !!process.env['VERCEL_TOKEN'], github: !!process.env['GITHUB_TOKEN'],
+}));
+export const publishVercel = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(publishInput).handler(async ({ data }) => {
+  const token = process.env['VERCEL_TOKEN'];
+  if (!token) return { url: "", error: "Adicione o token da Vercel para publicar." };
+  try {
+    const response = await fetch("https://api.vercel.com/v13/deployments", {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: `batdev-${slugify(data.name)}`.slice(0, 52), target: "production",
+        files: Object.entries(projectFiles(data.code)).map(([file, content]) => ({ file, data: content })),
+        projectSettings: { framework: "vite", buildCommand: "vite build", outputDirectory: "dist", installCommand: "npm install" } }),
+    });
+    const result = await response.json() as { alias?: string[]; url?: string; error?: { message?: string } };
+    if (!response.ok) { console.error("Vercel", response.status, result); return { url: "", error: `A Vercel recusou a publicação (${response.status}): ${result.error?.message ?? "erro desconhecido"}` }; }
+    return { url: `https://${result.alias?.[0] ?? result.url}`, error: "" };
+  } catch { return { url: "", error: "A conexão com a Vercel falhou." }; }
+});
+export const saveGitHub = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(publishInput.extend({ repo: z.string().max(100).optional() })).handler(async ({ data }) => {
+  const token = process.env['GITHUB_TOKEN'];
+  if (!token) return { repo: "", url: "", error: "Adicione o token do GitHub para salvar." };
+  const gh = async (path: string, init: RequestInit = {}) => {
+    const response = await fetch(`https://api.github.com/${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "BatDev", "Content-Type": "application/json" } });
+    const body = response.status === 204 ? {} : await response.json().catch(() => ({}));
+    return { ok: response.ok, status: response.status, body: body as any };
+  };
+  try {
+    const user = await gh("user");
+    if (!user.ok) return { repo: "", url: "", error: `O GitHub recusou o token (${user.status}).` };
+    const login = user.body.login as string, repo = data.repo || `batdev-${slugify(data.name)}`;
+    let info = await gh(`repos/${login}/${repo}`);
+    if (info.status === 404) {
+      info = await gh("user/repos", { method: "POST", body: JSON.stringify({ name: repo, private: true, auto_init: true, description: "Criado com BatDev" }) });
+      if (!info.ok) return { repo: "", url: "", error: `Não foi possível criar o repositório (${info.status}): ${info.body.message ?? ""}` };
+      await new Promise(r => setTimeout(r, 1500));
+    } else if (!info.ok) return { repo: "", url: "", error: `Repositório indisponível (${info.status}).` };
+    const branch = (info.body.default_branch as string) || "main";
+    const ref = await gh(`repos/${login}/${repo}/git/ref/heads/${branch}`);
+    if (!ref.ok) return { repo: "", url: "", error: `Não foi possível ler o repositório (${ref.status}).` };
+    const parent = ref.body.object.sha as string;
+    const base = await gh(`repos/${login}/${repo}/git/commits/${parent}`);
+    const tree = await gh(`repos/${login}/${repo}/git/trees`, { method: "POST", body: JSON.stringify({ base_tree: base.body.tree?.sha,
+      tree: Object.entries(projectFiles(data.code)).map(([path, content]) => ({ path, mode: "100644", type: "blob", content })) }) });
+    if (!tree.ok) return { repo: "", url: "", error: `Falha ao enviar arquivos (${tree.status}).` };
+    const commit = await gh(`repos/${login}/${repo}/git/commits`, { method: "POST", body: JSON.stringify({ message: `BatDev: ${new Date().toISOString().slice(0, 16).replace("T", " ")}`, tree: tree.body.sha, parents: [parent] }) });
+    const moved = await gh(`repos/${login}/${repo}/git/refs/heads/${branch}`, { method: "PATCH", body: JSON.stringify({ sha: commit.body.sha }) });
+    if (!commit.ok || !moved.ok) return { repo: "", url: "", error: "Não foi possível registrar a versão no GitHub." };
+    return { repo, url: `https://github.com/${login}/${repo}`, error: "" };
+  } catch { return { repo: "", url: "", error: "A conexão com o GitHub falhou." }; }
 });

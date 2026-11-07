@@ -22,3 +22,23 @@ describe("Forge generation", () => {
     expect(html).toContain('\\u003c/script>');
   });
 });
+import { applyEdits, wantsBuild } from "@/lib/forge";
+describe("BatDev rules", () => {
+  it("builds when asked to create, even in conversation mode", () => {
+    expect(wantsBuild("Crie um site para minha barbearia", false)).toBe(true);
+    expect(wantsBuild("faça uma landing page", false)).toBe(true);
+  });
+  it("stays in conversation for questions", () => {
+    expect(wantsBuild("O que você acha de tons escuros?", true)).toBe(false);
+  });
+  it("treats change requests as builds only when a site exists", () => {
+    expect(wantsBuild("troque a cor do botão", true)).toBe(true);
+    expect(wantsBuild("troque a cor do botão", false)).toBe(false);
+  });
+  it("applies visual text and image edits to the source", () => {
+    const code = '<h1>Café Aurora</h1><img src="https://a.com/1.jpg"/>';
+    const out = applyEdits(code, [{ kind: "text", from: "Café Aurora", to: "Café {Lua}" }, { kind: "img", from: "https://a.com/1.jpg", to: "https://b.com/2.jpg" }, { kind: "text", from: "Inexistente", to: "x" }]);
+    expect(out.code).toBe('<h1>Café Lua</h1><img src="https://b.com/2.jpg"/>');
+    expect(out.missed).toBe(1);
+  });
+});

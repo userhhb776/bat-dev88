@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 
-export const SYSTEM_PROMPT = `Você é o Forge, um designer e engenheiro front-end sênior, caloroso e colaborativo. Você conversa em português do Brasil, como um parceiro criativo — nunca robótico.
+export const SYSTEM_PROMPT = `Você é o BatDev, um designer e engenheiro front-end sênior, caloroso e colaborativo. Você conversa em português do Brasil, como um parceiro criativo — nunca robótico.
 
 ## Como conversar
 - Responda diretamente ao pedido, como numa conversa. Antes do código, no máximo uma ou duas frases curtas e específicas à ideia. Não anuncie paleta, tipografia ou lista de seções; mostre essas escolhas no resultado. Não repita uma fórmula de abertura nem entusiasmo forçado.
@@ -16,7 +16,14 @@ export const SYSTEM_PROMPT = `Você é o Forge, um designer e engenheiro front-e
 - Imagens reais e temáticas via https://images.unsplash.com/photo-<id>?w=1200&q=80 (use IDs que você conhece) ou https://picsum.photos/seed/<palavra>/1200/800.
 - Conteúdo específico em português, sem Lorem ipsum. Não invente depoimentos como reais, telefone ou horários. Identifique preços e nomes fictícios como demonstração na conversa.
 - Interatividade real com useState: menu mobile, abas, carrinho, filtros, modais, formulários com feedback.
-- Totalmente responsivo (mobile-first, sm/md/lg).
+
+## Mobile-first (OBRIGATÓRIO — celular e computador com a mesma qualidade)
+- Escreva primeiro para 360px de largura e só depois amplie com sm:/md:/lg:. Nunca use larguras fixas em px para blocos; use w-full, max-w-* e mx-auto.
+- Todo conteúdo dentro de um container: \`mx-auto w-full max-w-6xl px-5 sm:px-8\`. Nada encostado na borda, nada vazando horizontalmente (adicione overflow-x-hidden na raiz).
+- No celular, textos de destaque e chamadas ficam centralizados (text-center md:text-left) e alinhados ao mesmo eixo; títulos escalam (text-4xl sm:text-5xl lg:text-7xl) com leading-tight e break-words.
+- Grids começam em uma coluna: grid-cols-1 sm:grid-cols-2 lg:grid-cols-3. Flex em linha só a partir de md: (flex-col md:flex-row). Imagens com w-full, h-auto ou aspect-* + object-cover.
+- Botões com área de toque mínima de 44px, w-full sm:w-auto no celular quando forem a ação principal. Espaçamento vertical generoso (py-16 sm:py-24).
+- Menu: no celular, botão hambúrguer funcional com painel que abre e fecha; links completos só a partir de md:.
 
 ## Como pensar antes de responder
 - Entenda a intenção real: um pedido curto ("site de barbearia") pede que você assuma a liderança criativa e decida tudo com bom gosto. Um pedido detalhado deve ser seguido à risca, sem inventar o que não foi pedido.
@@ -38,10 +45,34 @@ export function extractCode(text: string): string | null {
   return m?.[1] ? m[1].trim() : null;
 }
 
+const BUILD_WORDS = /\b(crie|cria|criar|crio|fa[cç]a|faz|fazer|gere|gera|gerar|monte|monta|montar|construa|constr[oó]i|construir|desenvolva|desenvolver|produza|bote|pode criar|pode fazer|manda ver)\b/i;
+const EDIT_WORDS = /\b(mude|muda|mudar|troque|troca|trocar|altere|altera|alterar|adicione|adiciona|adicionar|coloque|coloca|colocar|remova|remove|tire|tira|aumente|diminua|deixe|deixa|corrija|corrige|ajuste|ajusta|melhore|melhora|substitua|centralize|inclua)\b/i;
+/** Decides when a message is a construction request, regardless of the selected mode. */
+export function wantsBuild(text: string, hasCode: boolean) {
+  const t = text.trim();
+  if (/\?\s*$/.test(t) && !/^(pode|consegue)\b/i.test(t)) return false;
+  return BUILD_WORDS.test(t) || (hasCode && EDIT_WORDS.test(t));
+}
+
+export type VisualEdit = { kind: "text" | "img"; from: string; to: string };
+const jsxText = (value: string) => value.replace(/[{}<>]/g, "");
+/** Applies visual edits from the preview back to the JSX source by exact replacement. */
+export function applyEdits(code: string, edits: VisualEdit[]) {
+  let next = code, missed = 0;
+  for (const edit of edits) {
+    const from = edit.from.trim(), to = edit.kind === "text" ? jsxText(edit.to.trim()) : edit.to.trim();
+    if (!from || from === to) continue;
+    if (next.includes(from)) { next = next.replace(from, to); continue; }
+    const loose = new RegExp(from.split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"));
+    if (loose.test(next)) next = next.replace(loose, to); else missed++;
+  }
+  return { code: next, missed };
+}
+
 export function buildPrompt(mode: "chat" | "build", date: Date, code = "") {
   return `${SYSTEM_PROMPT}
 Data atual: ${date.toISOString().slice(0, 10)}. Use o ano ${date.getUTCFullYear()} em coleções e copyright, exceto se o usuário pedir outra data. Não alegue acesso a notícias ou à internet.
-${mode === "chat" ? "MODO CONVERSA: apenas converse e planeje. Nunca gere código, nem quando pedirem para criar. Não envie o arquivo atual nem o reescreva. Responda em até 100 palavras, naturalmente, em 1 ou 2 parágrafos. Não dê checklist de identidade, paleta ou fontes; fale do objetivo da pessoa. No máximo UMA pergunta, apenas se a resposta for necessária. Não repita a instrução de escolher Construir a cada mensagem." : "MODO CONSTRUÇÃO: implemente o pedido; devolva um único bloco jsx completo. Preserve as partes não mencionadas em alterações."}
+${mode === "chat" ? "MODO CONVERSA: apenas converse e planeje. Nunca gere código, nem quando pedirem para criar. Não envie o arquivo atual nem o reescreva. Responda em até 120 palavras, naturalmente, em 1 ou 2 parágrafos. Não dê checklist de identidade, paleta ou fontes; fale do objetivo da pessoa. No máximo UMA pergunta, apenas se a resposta for necessária. Não repita a instrução de escolher Construir a cada mensagem." : "MODO CONSTRUÇÃO: implemente o pedido; devolva um único bloco jsx completo. Preserve as partes não mencionadas em alterações."}
 ${mode === "build" && code ? `Site atual (base obrigatória para alterações):\n${code}` : ""}`;
 }
 export function prepareHistory(history: Msg[], mode: "chat" | "build") {
@@ -75,6 +106,17 @@ export function previewHtml(code: string) {
   window.addEventListener('error',function(e){if(e.target && e.target.tagName==='SCRIPT') notify('error','Não foi possível carregar os recursos do site.');});
   window.addEventListener('unhandledrejection',function(e){notify('error',String(e.reason && e.reason.message || 'Falha ao abrir o site'));});
   document.addEventListener('error',function(e){var t=e.target;if(t&&t.tagName==='IMG'&&!t.dataset.fb){t.dataset.fb=1;t.src='https://picsum.photos/seed/'+encodeURIComponent((t.alt||'img').slice(0,20))+'/1200/800';}},true);
+  var editing=false,current=null;
+  var css=document.createElement('style');css.textContent='.bd-edit [data-bd-hover]{outline:2px dashed #ffd600!important;outline-offset:2px;cursor:text}.bd-edit img[data-bd-hover]{cursor:pointer}[contenteditable=true]{outline:2px solid #ffd600!important;outline-offset:2px}';document.head.appendChild(css);
+  function leaf(el){if(!el||el===document.body||el.id==='root')return null;if(el.tagName==='IMG')return el;var t=(el.textContent||'').trim();if(!t||t.length>600)return null;for(var i=0;i<el.children.length;i++){var c=el.children[i];if(!/^(B|I|EM|STRONG|SPAN|BR|SVG)$/.test(c.tagName))return null;}return el;}
+  document.addEventListener('mouseover',function(e){if(!editing)return;var el=leaf(e.target);document.querySelectorAll('[data-bd-hover]').forEach(function(n){n.removeAttribute('data-bd-hover');});if(el)el.setAttribute('data-bd-hover','');},true);
+  document.addEventListener('click',function(e){if(!editing)return;var el=leaf(e.target);e.preventDefault();e.stopPropagation();if(!el)return;
+    if(el.tagName==='IMG'){var from=el.getAttribute('src')||'';var to=prompt('Endereço (URL) da nova imagem:',from);if(to&&to!==from){el.src=to;notify('change',JSON.stringify({kind:'img',from:from,to:to}));}return;}
+    if(current===el)return;current=el;var before=el.innerText;el.contentEditable='true';el.focus();
+    el.addEventListener('blur',function done(){el.removeEventListener('blur',done);el.contentEditable='false';current=null;var after=el.innerText;if(after.trim()!==before.trim())notify('change',JSON.stringify({kind:'text',from:before,to:after}));});
+  },true);
+  document.addEventListener('keydown',function(e){if(current&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();current.blur();}},true);
+  window.addEventListener('message',function(e){if(e.source!==parent||!e.data||e.data.source!=='batdev-host')return;editing=!!e.data.edit;document.documentElement.classList.toggle('bd-edit',editing);if(!editing&&current)current.blur();});
   try {
     if(!window.React || !window.ReactDOM || !window.Babel) throw new Error('Não foi possível carregar os recursos do site.');
     var iconCache={};
@@ -113,7 +155,7 @@ export function projectFiles(code: string): Record<string, string> {
   return {
     "package.json": JSON.stringify(
       {
-        name: "forge-app",
+        name: "batdev-app",
         private: true,
         version: "0.0.1",
         type: "module",
@@ -133,7 +175,7 @@ export function projectFiles(code: string): Record<string, string> {
     "vite.config.js": `import { defineConfig } from "vite";\nimport react from "@vitejs/plugin-react";\nexport default defineConfig({ plugins: [react()] });\n`,
     "tailwind.config.js": `export default { content: ["./index.html", "./src/**/*.{js,jsx}"], theme: { extend: {} }, plugins: [] };\n`,
     "postcss.config.js": `export default { plugins: { tailwindcss: {}, autoprefixer: {} } };\n`,
-    "index.html": `<!doctype html>\n<html lang="pt-BR">\n<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Forge App</title></head>\n<body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>\n</html>\n`,
+    "index.html": `<!doctype html>\n<html lang="pt-BR">\n<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>BatDev App</title></head>\n<body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>\n</html>\n`,
     "src/index.css": `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`,
     "src/main.jsx": `import React from "react";\nimport ReactDOM from "react-dom/client";\nimport App from "./App.jsx";\nimport "./index.css";\nReactDOM.createRoot(document.getElementById("root")).render(<App />);\n`,
     "src/App.jsx": `import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment } from "react";\n\n${body}\n\nexport default App;\n`,
@@ -147,26 +189,11 @@ export async function downloadZip(code: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "forge-app.zip";
+  a.download = "batdev-app.zip";
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
-export async function deployVercel(token: string, code: string): Promise<string> {
-  const files = Object.entries(projectFiles(code)).map(([file, data]) => ({ file, data }));
-  const res = await fetch("https://api.vercel.com/v13/deployments", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: "forge-app",
-      files,
-      target: "production",
-      projectSettings: { framework: "vite", buildCommand: "vite build", outputDirectory: "dist", installCommand: "npm install" },
-    }),
-  });
-  const j = await res.json();
-  if (!res.ok) throw new Error(j?.error?.message ?? `Erro ${res.status}`);
-  return `https://${j.url}`;
-}
+export const slugify = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "site";
