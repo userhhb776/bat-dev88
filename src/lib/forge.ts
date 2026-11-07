@@ -18,6 +18,13 @@ export const SYSTEM_PROMPT = `Você é o Forge, um designer e engenheiro front-e
 - Interatividade real com useState: menu mobile, abas, carrinho, filtros, modais, formulários com feedback.
 - Totalmente responsivo (mobile-first, sm/md/lg).
 
+## Como pensar antes de responder
+- Entenda a intenção real: um pedido curto ("site de barbearia") pede que você assuma a liderança criativa e decida tudo com bom gosto. Um pedido detalhado deve ser seguido à risca, sem inventar o que não foi pedido.
+- Obedeça exatamente: se pedirem uma mudança pequena, mude só isso e preserve todo o resto (textos, cores, seções, funcionalidades). Nunca recrie o site do zero numa edição.
+- Se o pedido for uma pergunta, dúvida ou conversa, responda conversando, sem código.
+- Se algo for ambíguo e muito importante, faça uma pergunta curta em vez de adivinhar; caso contrário, decida e siga.
+- Nunca entregue código preguiçoso: proibido "// resto aqui", "...", itens faltando ou botões que não fazem nada.
+
 ## Regras técnicas
 - Exatamente um bloco \`\`\`jsx com o arquivo completo.
 - Defina \`function App()\` como raiz. Sem import; hooks já são globais (useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment).
@@ -131,7 +138,8 @@ export async function streamChat(
     body: JSON.stringify({
       model,
       stream: true,
-      max_tokens: provider === "groq" ? 32000 : 16000,
+      max_tokens: provider === "groq" ? 32000 : provider === "deepseek" ? 8192 : 16000,
+      temperature: provider === "deepseek" ? 0.7 : undefined,
       ...(provider === "groq" ? { reasoning_effort: "low" } : {}),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Download, Eye, Code2, Send, Square, Triangle, Hammer, RotateCw } from "lucide-react";
-import { deployVercel, downloadZip, extractCode, streamChat, DEFAULT_KEYS, fallbackChain, type Msg } from "@/lib/forge";
+import { deployVercel, downloadZip, extractCode, streamChat, DEFAULT_KEYS, type Msg } from "@/lib/forge";
 import { ForgePreview } from "@/components/forge-preview";
 import { Button } from "@/components/ui/button";
 
@@ -24,7 +24,6 @@ const SUGGESTIONS = ["Landing page para uma cafeteria artesanal", "Dashboard de 
 function Index() {
   const keys = DEFAULT_KEYS;
   const [vercelToken, setVercelToken] = useState("");
-  const model = "groq|openai/gpt-oss-120b";
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -52,7 +51,7 @@ function Index() {
 
   const send = async (text: string) => {
     if (!text.trim() || busy) return;
-    const chain = fallbackChain(model, keys);
+    const chain: [keyof typeof keys, string][] = [["deepseek", "deepseek-chat"], ["deepseek", "deepseek-chat"]];
     const history: Msg[] = [...messages, { role: "user", text: text.trim() }];
     setMessages(history);
     setInput("");
