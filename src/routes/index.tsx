@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { Download, Eye, Code2, Send, Square, RotateCw, Plus, ArrowLeft, MessageCircle, WandSparkles, FolderOpen, Pencil, Trash2, Upload, Rocket, Github, Check, X, ExternalLink } from "lucide-react";
-import { applyEdits, downloadZip, extractCode, parseDecisions, wantsBuild, type VisualEdit } from "@/lib/forge";
+import { Download, Eye, Code2, Send, Square, RotateCw, Plus, ArrowLeft, MessageCircle, WandSparkles, FolderOpen, Pencil, Trash2, Upload, Rocket, Github, Check, X, ExternalLink, Paperclip, LoaderCircle } from "lucide-react";
+import { applyEdits, downloadZip, extractCode, parseDecisions, slugify, wantsBuild, type VisualEdit } from "@/lib/forge";
 import { cloudDelete, cloudList, cloudSave, uploadFile, integrationStatus, publishVercel, saveGitHub } from "@/lib/forge.functions";
 import { deleteProject, exportBackup, listProjects, newProject, parseBackup, saveProject, type Project } from "@/lib/projects";
 import { ForgePreview } from "@/components/forge-preview";
@@ -77,7 +77,7 @@ function Index() {
     if (publishName === null) { setPublishName(active.siteName ?? slugify(active.title).slice(0, 30)); return; }
     const name = slugify(publishName).slice(0, 50); setPublishName(null);
     setShipping("vercel"); setNotice("Publicando na Vercel…");
-    try { const result = await publish({ data: { code: active.code, name, exact: true } }); if (!result.error) update({ siteName: name }); if (result.error) setNotice(result.error); else { update({ siteUrl: result.url }); setNotice(`Publicado! O site fica no ar em instantes: ${result.url}`); } }
+    try { const result = await publish({ data: { code: active.code, name, exact: true } }); if (result.error) setNotice(result.error); else { update({ siteUrl: result.url, siteName: name }); setNotice(`Publicado! O site fica no ar em instantes: ${result.url}`); } }
     catch { setNotice("A publicação não terminou. Tente novamente."); } finally { setShipping(""); }
   };
   const saveEdits = () => {
