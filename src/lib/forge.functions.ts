@@ -15,12 +15,13 @@ export const accessStatus = createServerFn({ method: "GET" }).handler(async () =
   if (!secret) return false;
   return !!(await useSession<{ unlocked: boolean }>({ name: "forge_session", password: secret })).data.unlocked;
 });
-export const unlockForge = createServerFn({ method: "POST" }).inputValidator(z.object({ password: z.string().min(1).max(256) })).handler(async ({ data }) => {
-  const password = process.env['FORGE_PASSWORD'];
+export const unlockForge = createServerFn({ method: "POST" }).inputValidator(z.object({ email: z.string().max(256), password: z.string().min(1).max(256) })).handler(async ({ data }) => {
+  const password = process.env['FORGE_LOGIN_PASSWORD'] ?? process.env['FORGE_PASSWORD'];
+  const email = (process.env['FORGE_EMAIL'] ?? "").trim().toLowerCase();
   const secret = process.env['FORGE_SESSION_SECRET'];
   if (!password || !secret) return { ok: false, error: "Configure a senha privada no seu servidor." };
   const encoder = new TextEncoder();
-  const [a, b] = await Promise.all([crypto.subtle.digest("SHA-256", encoder.encode(password)), crypto.subtle.digest("SHA-256", encoder.encode(data.password))]);
+  const [a, b] = await Promise.all([crypto.subtle.digest("SHA-256", encoder.encode(email + "\n" + password)), crypto.subtle.digest("SHA-256", encoder.encode(data.email.trim().toLowerCase() + "\n" + data.password))]);
   const left = new Uint8Array(a), right = new Uint8Array(b);
   let difference = 0; for (let i = 0; i < left.length; i++) difference |= (left[i] ?? 0) ^ (right[i] ?? 0);
   if (difference) return { ok: false, error: "Senha incorreta." };
@@ -112,4 +113,37 @@ export const saveGitHub = createServerFn({ method: "POST" }).middleware([private
     if (!commit.ok || !moved.ok) return { repo: "", url: "", error: "Não foi possível registrar a versão no GitHub." };
     return { repo, url: `https://github.com/${login}/${repo}`, error: "" };
   } catch { return { repo: "", url: "", error: "A conexão com o GitHub falhou." }; }
+});
+// Biblioteca na nuvem: um JSON por projeto num bucket privado do Supabase do usuário (sem tabelas extras).
+const BUCKET = "batdev-projects";
+async function storage() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const s = supabaseAdmin.storage;
+  const { error } = await s.getBucket(BUCKET);
+  if (error) await s.createBucket(BUCKET, { public: false });
+  return s.from(BUCKET);
+}
+const projectSchema = z.object({ id: z.string().uuid(), title: z.string().min(1).max(200), messages: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string() })).max(500), code: z.string().max(400000), mode: z.enum(["chat", "build"]), updatedAt: z.string(), repo: z.string().optional(), repoUrl: z.string().optional(), siteUrl: z.string().optional() });
+export const cloudList = createServerFn({ method: "GET" }).middleware([privateAccess]).handler(async () => {
+  try {
+    const bucket = await storage();
+    const { data: files, error } = await bucket.list("", { limit: 1000 });
+    if (error) return { projects: [], error: "Nuvem indisponível." };
+    const projects = (await Promise.all((files ?? []).filter(f => f.name.endsWith(".json")).map(async f => {
+      const { data } = await bucket.download(f.name);
+      if (!data) return null;
+      const parsed = projectSchema.safeParse(JSON.parse(await data.text()));
+      return parsed.success ? parsed.data : null;
+    }))).filter(p => p !== null);
+    return { projects, error: "" };
+  } catch (e) { console.error("cloudList", e); return { projects: [], error: "Nuvem indisponível." }; }
+});
+export const cloudSave = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(projectSchema).handler(async ({ data }) => {
+  try {
+    const { error } = await (await storage()).upload(`${data.id}.json`, new Blob([JSON.stringify(data)], { type: "application/json" }), { upsert: true, contentType: "application/json" });
+    return { ok: !error };
+  } catch (e) { console.error("cloudSave", e); return { ok: false }; }
+});
+export const cloudDelete = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(z.object({ id: z.string().uuid() })).handler(async ({ data }) => {
+  try { const { error } = await (await storage()).remove([`${data.id}.json`]); return { ok: !error }; } catch { return { ok: false }; }
 });
