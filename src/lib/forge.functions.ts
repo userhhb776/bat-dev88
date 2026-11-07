@@ -7,7 +7,7 @@ const privateAccess = createMiddleware({ type: "function" }).server(async ({ nex
   const secret = process.env['FORGE_SESSION_SECRET'];
   if (!secret) throw new Error("O acesso privado não está configurado.");
   const session = await useSession<{ unlocked: boolean }>({ name: "forge_session", password: secret });
-  if (!session.data.unlocked) throw new Error("Abra o Forge com sua senha para continuar.");
+  if (!session.data.unlocked) throw new Error("Abra o BatDev com sua senha para continuar.");
   return next();
 });
 export const accessStatus = createServerFn({ method: "GET" }).handler(async () => {
