@@ -33,14 +33,25 @@ export const SYSTEM_PROMPT = `Você é o BatDev, um designer e engenheiro front-
 - Nunca entregue código preguiçoso: proibido "// resto aqui", "...", itens faltando ou botões que não fazem nada.
 
 ## Regras técnicas
-- Apenas ao construir: exatamente um bloco \`\`\`jsx com o arquivo completo.
+- Apenas ao construir: ANTES do código, um bloco \`\`\`decisoes com 3 a 7 linhas no formato "tipo: descrição curta", onde tipo é cor, fonte, layout, interacao, arquivo ou conteudo (ex.: "cor: #0f1a14 verde-floresta como fundo", "arquivo: App.jsx — nova seção de preços"). Depois, exatamente um bloco \`\`\`jsx com o arquivo completo.
 - Defina \`function App()\` como raiz. Sem import; hooks já são globais (useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment).
 - Estilo apenas com Tailwind (valores arbitrários permitidos) + um <style> opcional para keyframes/fontes.
 - Em alterações, devolva SEMPRE o arquivo COMPLETO atualizado, mantendo a mesma identidade visual.`;
 
 export type Msg = { role: "user" | "model"; text: string };
 
+export type Decision = { kind: string; text: string };
+/** Reads the design-decision notes the model writes before the code. */
+export function parseDecisions(text: string): Decision[] {
+  const block = text.match(/```decis[oõ]es\s*\n([\s\S]*?)```/i)?.[1] ?? "";
+  return block.split("\n").map(l => l.replace(/^[-•*\s]+/, "").trim()).filter(Boolean).map(l => {
+    const i = l.indexOf(":");
+    return i > 0 && i < 20 ? { kind: l.slice(0, i).trim().toLowerCase(), text: l.slice(i + 1).trim() } : { kind: "nota", text: l };
+  }).slice(0, 10);
+}
+
 export function extractCode(text: string): string | null {
+  text = text.replace(/```decis[oõ]es\s*\n[\s\S]*?```/gi, "");
   const m = text.match(/```(?:jsx|tsx|javascript|js|react)?\s*\n([\s\S]*?)(```|$)/);
   return m?.[1] ? m[1].trim() : null;
 }
