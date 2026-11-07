@@ -15,12 +15,13 @@ export const accessStatus = createServerFn({ method: "GET" }).handler(async () =
   if (!secret) return false;
   return !!(await useSession<{ unlocked: boolean }>({ name: "forge_session", password: secret })).data.unlocked;
 });
-export const unlockForge = createServerFn({ method: "POST" }).inputValidator(z.object({ password: z.string().min(1).max(256) })).handler(async ({ data }) => {
-  const password = process.env['FORGE_PASSWORD'];
+export const unlockForge = createServerFn({ method: "POST" }).inputValidator(z.object({ email: z.string().max(256), password: z.string().min(1).max(256) })).handler(async ({ data }) => {
+  const password = process.env['FORGE_LOGIN_PASSWORD'] ?? process.env['FORGE_PASSWORD'];
+  const email = (process.env['FORGE_EMAIL'] ?? "").trim().toLowerCase();
   const secret = process.env['FORGE_SESSION_SECRET'];
   if (!password || !secret) return { ok: false, error: "Configure a senha privada no seu servidor." };
   const encoder = new TextEncoder();
-  const [a, b] = await Promise.all([crypto.subtle.digest("SHA-256", encoder.encode(password)), crypto.subtle.digest("SHA-256", encoder.encode(data.password))]);
+  const [a, b] = await Promise.all([crypto.subtle.digest("SHA-256", encoder.encode(email + "\n" + password)), crypto.subtle.digest("SHA-256", encoder.encode(data.email.trim().toLowerCase() + "\n" + data.password))]);
   const left = new Uint8Array(a), right = new Uint8Array(b);
   let difference = 0; for (let i = 0; i < left.length; i++) difference |= (left[i] ?? 0) ^ (right[i] ?? 0);
   if (difference) return { ok: false, error: "Senha incorreta." };
