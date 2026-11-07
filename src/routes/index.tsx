@@ -1,229 +1,80 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { Download, Eye, Code2, Send, Square, Triangle, Hammer, RotateCw } from "lucide-react";
-import { deployVercel, downloadZip, extractCode, streamChat, DEFAULT_KEYS, type Msg } from "@/lib/forge";
+import { Download, Eye, Code2, Send, Square, Hammer, RotateCw, Plus, ArrowLeft, MessageCircle, WandSparkles, FolderOpen, Pencil, Trash2, Upload } from "lucide-react";
+import { downloadZip, extractCode } from "@/lib/forge";
+import { generateSite } from "@/lib/forge.functions";
+import { deleteProject, exportBackup, listProjects, newProject, parseBackup, saveProject, type Project } from "@/lib/projects";
 import { ForgePreview } from "@/components/forge-preview";
+import { ForgeAccess } from "@/components/forge-access";
+import { ForgeBalance } from "@/components/forge-balance";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Forge — Crie sites e apps com IA" },
-      { name: "description", content: "Crie sites e aplicativos com IA, converse sobre suas ideias e veja o resultado com exportação ZIP e Vercel." },
-      { property: "og:title", content: "Forge — Crie sites e apps com IA" },
-      { property: "og:description", content: "Chat com IA, preview em tempo real, código React + Tailwind, ZIP e Vercel." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
-  component: Index,
+  head: () => ({ meta: [
+    { title: "Forge — Seu espaço de criação com IA" },
+    { name: "description", content: "Converse, construa e mantenha seus projetos salvos no seu espaço Forge." },
+    { property: "og:title", content: "Forge — Seu espaço de criação com IA" },
+    { property: "og:description", content: "Projetos próprios, conversa econômica e criação com DeepSeek." },
+    { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary_large_image" },
+  ] }), component: () => <ForgeAccess><Index/></ForgeAccess>,
 });
-
-const SUGGESTIONS = ["Landing page para uma cafeteria artesanal", "Dashboard de finanças pessoais", "App de lista de tarefas com filtros"];
-
+const chatText = (text: string) => text.replace(/```[\s\S]*?(```|$)/g, "\n").replace(/\n{3,}/g, "\n\n").trim() || "Site atualizado.";
 function Index() {
-  const keys = DEFAULT_KEYS;
-  const [vercelToken, setVercelToken] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [code, setCode] = useState("");
-  const [tab, setTab] = useState<"preview" | "code">("preview");
-  const [mView, setMView] = useState<"chat" | "app">("chat");
-  const [notice, setNotice] = useState("");
-  const [frameKey, setFrameKey] = useState(0);
-  const abortRef = useRef<AbortController | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setVercelToken(localStorage.getItem("forge_vercel_token") ?? "");
-  }, []);
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streaming]);
-
-  const saveSettings = () => {
-    localStorage.setItem("forge_vercel_token", vercelToken.trim());
-    setShowSettings(false);
+  const generate = useServerFn(generateSite);
+  const [projects, setProjects] = useState<Project[]>([]), [active, setActive] = useState<Project | null>(null);
+  const [loaded, setLoaded] = useState(false), [input, setInput] = useState(""), [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(""), [saved, setSaved] = useState(""), [balanceRefresh, setBalanceRefresh] = useState(0);
+  const [tab, setTab] = useState<"preview" | "code">("preview"), [mView, setMView] = useState<"chat" | "app">("chat");
+  const [frameKey, setFrameKey] = useState(0), [renameId, setRenameId] = useState(""), [renameText, setRenameText] = useState("");
+  const [deleteId, setDeleteId] = useState("");
+  const endRef = useRef<HTMLDivElement>(null), uploadRef = useRef<HTMLInputElement>(null), requestId = useRef(0);
+  useEffect(() => { listProjects().then(setProjects).catch(() => setNotice("O salvamento local não está disponível neste navegador.")).finally(() => setLoaded(true)); }, []);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [active?.messages, busy]);
+  const persist = async (project: Project) => {
+    setSaved("Salvando…");
+    try { await saveProject(project); setProjects(previous => [project, ...previous.filter(p => p.id !== project.id)].sort((a,b) => b.updatedAt.localeCompare(a.updatedAt))); setSaved("Salvo neste navegador"); }
+    catch { setSaved("Não salvo"); setNotice("Não foi possível salvar. Baixe uma cópia de segurança antes de fechar."); }
   };
-
-  const send = async (text: string) => {
-    if (!text.trim() || busy) return;
-    const chain: [keyof typeof keys, string][] = [["deepseek", "deepseek-chat"], ["deepseek", "deepseek-chat"]];
-    const history: Msg[] = [...messages, { role: "user", text: text.trim() }];
-    setMessages(history);
-    setInput("");
-    setBusy(true);
-    setStreaming("");
-    setNotice("");
-    setTab("code");
-    const ac = new AbortController();
-    abortRef.current = ac;
+  const update = (changes: Partial<Project>) => { if (!active) return; const next = { ...active, ...changes, updatedAt: new Date().toISOString() }; setActive(next); void persist(next); };
+  const open = (project: Project) => { setActive(project); setInput(""); setNotice(""); setSaved("Salvo neste navegador"); setMView("chat"); setFrameKey(k => k + 1); };
+  const send = async (text: string, forceBuild = false) => {
+    if (!text.trim() || busy || !loaded) return;
+    const project = active ?? newProject(text);
+    const mode = forceBuild ? "build" : project.mode;
+    const pending: Project = { ...project, title: project.messages.length === 0 && project.title === "Novo projeto" ? text.trim().slice(0, 64) : project.title, mode, messages: [...project.messages, { role: "user", text: text.trim() }], updatedAt: new Date().toISOString() };
+    setActive(pending); setInput(""); setBusy(true); setNotice(""); await persist(pending);
+    const id = ++requestId.current;
     try {
-      let full = "";
-      let lastErr: Error | null = null;
-      for (const [provider, modelName] of chain) {
-        try {
-          setNotice("Gerando…");
-          full = await streamChat(provider, keys[provider], modelName, history, (t) => {
-            setStreaming(t);
-          }, ac.signal);
-          if (!full.trim()) throw new Error("Resposta vazia");
-          if ((full.match(/```/g) ?? []).length % 2 === 1) throw new Error("Resposta incompleta");
-          lastErr = null;
-          setNotice("");
-          break;
-        } catch (err) {
-          if ((err as Error).name === "AbortError") throw err;
-          lastErr = err as Error;
-          setStreaming("");
-        }
-      }
-      if (lastErr) throw new Error("A IA está indisponível no momento. Tente de novo em instantes.");
-      setMessages((m) => [...m, { role: "model", text: full }]);
-      const c = extractCode(full);
-      if (c) {
-        setCode(c);
-        setTab("preview");
-        setMView("app");
-        setFrameKey((k) => k + 1);
-      }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") setMessages((m) => [...m, { role: "model", text: `⚠️ ${(e as Error).message}` }]);
-    } finally {
-      setStreaming("");
-      setBusy(false);
-      setNotice("");
-    }
+      const result = await generate({ data: { mode, code: project.code, history: pending.messages } });
+      if (id !== requestId.current) return;
+      if (result.error) { setNotice(result.error); return; }
+      if (!result.text.trim()) { setNotice("A IA retornou uma resposta vazia. Tente novamente."); return; }
+      const code = mode === "build" ? extractCode(result.text) : null;
+      if (code && (result.text.match(/```/g) ?? []).length % 2) { setNotice("A resposta veio incompleta; seu site anterior foi mantido."); return; }
+      const completed: Project = { ...pending, messages: [...pending.messages, { role: "model", text: result.text }], code: code ?? project.code, updatedAt: new Date().toISOString() };
+      setActive(completed); await persist(completed);
+      if (code) { setTab("preview"); setMView("app"); setFrameKey(k => k + 1); }
+    } catch { if (id === requestId.current) setNotice("A criação não terminou. Seu trabalho anterior continua salvo."); }
+    finally { if (id === requestId.current) setBusy(false); setBalanceRefresh(k => k + 1); }
   };
-
-  const onDeploy = async () => {
-    if (!code) return;
-    if (!vercelToken) { setShowSettings(true); return; }
-    setNotice("Publicando na Vercel…");
-    try {
-      const url = await deployVercel(vercelToken, code);
-      setNotice(url);
-    } catch (e) {
-      setNotice(`Falha: ${(e as Error).message}`);
-    }
-  };
-
-  const chatText = (t: string) => t.replace(/```[\s\S]*?(```|$)/g, "\n").replace(/\n{3,}/g, "\n\n").trim() || "Código gerado ✓";
-
-  return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-        <div className="flex items-center gap-2 font-display text-lg font-bold">
-          <Hammer className="h-5 w-5 text-primary" /> Forge
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" disabled={!code} onClick={() => downloadZip(code)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-40">
-            <Download className="h-4 w-4" /> ZIP
-          </Button>
-          <Button variant="ghost" disabled={!code} onClick={onDeploy} className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40">
-            <Triangle className="h-3.5 w-3.5 fill-current" /> Vercel
-          </Button>
-        </div>
-      </header>
-
-      <div className="flex min-h-0 flex-1">
-        <aside className={`${mView === "chat" ? "flex" : "hidden"} w-full shrink-0 flex-col border-r border-border bg-card md:flex md:w-[400px]`}>
-          <div className="flex-1 space-y-4 overflow-y-auto p-4">
-            {messages.length === 0 && !busy && (
-              <div className="pt-8">
-                <h1 className="font-display text-2xl font-bold">O que vamos construir?</h1>
-                <p className="mt-2 text-sm text-muted-foreground">Descreva um site ou app. A IA gera o código e você vê o resultado ao lado.</p>
-                <div className="mt-6 space-y-2">
-                  {SUGGESTIONS.map((s) => (
-                    <Button variant="ghost" key={s} onClick={() => send(s)} className="block w-full rounded-lg border border-border px-3 py-2 text-left text-sm hover:border-primary hover:bg-accent">{s}</Button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {messages.map((m, i) => (
-              <div key={i} className={m.role === "user" ? "ml-8 rounded-xl bg-primary px-3 py-2 text-sm text-primary-foreground" : "text-sm whitespace-pre-wrap text-foreground"}>
-                {m.role === "user" ? m.text : chatText(m.text)}
-                {m.role === "model" && extractCode(m.text) && (
-                  <Button variant="ghost" onClick={() => { setTab("preview"); setMView("app"); }} className="mt-2 flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs md:hidden"><Eye className="h-3.5 w-3.5" /> Abrir Preview</Button>
-                )}
-              </div>
-            ))}
-            {busy && (
-              <div className="space-y-3 text-sm">
-                {streaming && <p className="whitespace-pre-wrap">{streaming.replace(/```[\s\S]*$/, "").trim()}</p>}
-                <div className="flex items-center gap-2 text-muted-foreground">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-                {streaming.includes("```") ? "Preparando seu site…" : "Pensando na sua ideia…"}
-                </div>
-              </div>
-            )}
-            <div ref={endRef} />
-          </div>
-          <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="border-t border-border p-3">
-            <div className="flex items-end gap-2 rounded-xl border border-border bg-background p-2 focus-within:border-primary">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
-                rows={2}
-                placeholder={messages.length ? "Peça uma alteração…" : "Descreva seu app…"}
-                className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              />
-              {busy ? (
-                <Button variant="ghost" type="button" aria-label="Parar geração" onClick={() => abortRef.current?.abort()} className="rounded-lg bg-secondary p-2"><Square className="h-4 w-4" /></Button>
-              ) : (
-                <Button variant="ghost" type="submit" aria-label="Enviar mensagem" disabled={!input.trim()} className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-40"><Send className="h-4 w-4" /></Button>
-              )}
-            </div>
-          </form>
-        </aside>
-
-        <main className={`${mView === "app" ? "flex" : "hidden"} md:flex min-w-0 flex-1 flex-col`}>
-          <div className="flex h-11 items-center gap-1 border-b border-border px-3">
-            <Button variant="ghost" onClick={() => setMView("chat")} className="mr-1 rounded-md px-3 py-1 text-sm text-muted-foreground hover:text-foreground md:hidden">← Chat</Button>
-            {(["preview", "code"] as const).map((t) => (
-              <Button variant="ghost" key={t} onClick={() => setTab(t)} className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-sm ${tab === t ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                {t === "preview" ? <Eye className="h-4 w-4" /> : <Code2 className="h-4 w-4" />} {t === "preview" ? "Preview" : "Código"}
-              </Button>
-            ))}
-            {tab === "preview" && code && (
-              <Button variant="ghost" onClick={() => setFrameKey((k) => k + 1)} className="ml-1 rounded-md p-1.5 text-muted-foreground hover:text-foreground" title="Recarregar"><RotateCw className="h-4 w-4" /></Button>
-            )}
-            {notice && (
-              <div className="ml-auto truncate font-mono text-xs text-muted-foreground">
-                {notice.startsWith("https://") ? <a href={notice} target="_blank" rel="noreferrer" className="text-primary underline">{notice}</a> : notice}
-              </div>
-            )}
-          </div>
-          <div className="min-h-0 flex-1 bg-muted">
-            {!code ? (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Seu app aparecerá aqui.</div>
-            ) : tab === "preview" ? (
-              <ForgePreview key={frameKey} code={code} busy={busy} onRepair={(error) => send(`O site não abriu: ${error}. Corrija o problema e devolva o App completo, mantendo o design. Use JavaScript JSX e SVG inline para ícones.`)} />
-            ) : (
-              <pre className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed text-foreground"><code>{code}</code></pre>
-            )}
-          </div>
-        </main>
-      </div>
-
-      {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h2 className="font-display text-xl font-bold">Publicar na Vercel</h2>
-            <label className="mt-4 block text-sm font-medium">Token da Vercel (opcional)</label>
-            <input type="password" value={vercelToken} onChange={(e) => setVercelToken(e.target.value)} placeholder="Para publicar com um clique" className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-primary" />
-            <a href="https://vercel.com/account/tokens" target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-primary underline">Criar token na Vercel</a>
-            <div className="mt-6 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setShowSettings(false)} className="rounded-md px-4 py-2 text-sm hover:bg-accent">Cancelar</Button>
-              <Button variant="ghost" onClick={saveSettings} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Salvar</Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  const composer = <form onSubmit={e => { e.preventDefault(); void send(input); }} className="border-t border-border p-3">
+    {active && <div className="mb-2 flex gap-1" role="group" aria-label="Modo de criação">{(["chat", "build"] as const).map(mode => <Button key={mode} type="button" size="sm" variant={active.mode === mode ? "secondary" : "ghost"} aria-pressed={active.mode === mode} disabled={busy} onClick={() => update({ mode })}>{mode === "chat" ? <MessageCircle/> : <WandSparkles/>}{mode === "chat" ? "Conversar" : "Construir"}</Button>)}</div>}
+    <div className="flex items-end gap-2 rounded-lg border border-border bg-background p-2 focus-within:border-primary"><textarea aria-label="Mensagem" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(input); } }} rows={2} placeholder={active ? (active.mode === "chat" ? "Vamos pensar na sua ideia…" : "O que vamos criar ou mudar?") : "Qual é a sua ideia?"} className="min-w-0 flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"/>
+      {busy ? <Button type="button" size="icon" variant="secondary" aria-label="Parar geração" onClick={() => { requestId.current++; setBusy(false); setNotice("Geração interrompida aqui; a solicitação já enviada pode ser cobrada pelo DeepSeek."); }}><Square className="h-4 w-4"/></Button> : <Button size="icon" type="submit" aria-label="Enviar mensagem" disabled={!input.trim() || !loaded}><Send className="h-4 w-4"/></Button>}
+    </div></form>;
+  return <div className="flex h-dvh flex-col bg-background text-foreground">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-3 md:px-5"><div className="flex min-w-0 items-center gap-2">{active && <Button variant="ghost" size="icon" aria-label="Meus projetos" disabled={busy} onClick={() => { setActive(null); setInput(""); }}><ArrowLeft className="h-4 w-4"/></Button>}<Hammer className="h-5 w-5 shrink-0 text-primary"/><span className="font-display text-lg font-bold">Forge</span></div><div className="flex items-center gap-2"><ForgeBalance refresh={balanceRefresh}/>{active?.code && <Button variant="outline" size="sm" aria-label="Baixar projeto ZIP" onClick={() => downloadZip(active.code)}><Download className="h-4 w-4"/><span className="hidden sm:inline">ZIP</span></Button>}</div></header>
+    {notice && <div role="alert" className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-secondary px-4 py-2 text-sm"><span>{notice}</span><Button size="sm" variant="ghost" onClick={() => setNotice("")}>Fechar</Button></div>}
+    {!active ? <main className="min-h-0 flex-1 overflow-y-auto"><div className="mx-auto max-w-5xl px-5 pb-12 pt-10 md:px-10 md:pt-16">
+      <div className="mx-auto max-w-2xl"><div className="mb-4 flex items-center gap-2 text-sm text-primary"><Hammer className="h-4 w-4"/> Estúdio Forge</div><h1 className="font-display text-3xl font-bold md:text-4xl">Uma ideia. Seu próximo projeto.</h1><div className="mt-6 overflow-hidden rounded-lg border border-border bg-card">{composer}</div><div className="mt-3 flex gap-2"><Button variant="ghost" size="sm" onClick={() => open(newProject())}><MessageCircle/> Nova conversa</Button><Button variant="ghost" size="sm" onClick={() => open({ ...newProject(), mode: "build" })}><Plus/> Novo projeto</Button></div></div>
+      <section className="mt-12"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-lg font-semibold"><FolderOpen className="h-5 w-5 text-primary"/> Meus projetos <span className="text-sm text-muted-foreground">{projects.length}</span></h2><div className="flex gap-1"><Button variant="ghost" size="sm" disabled={!projects.length} onClick={() => exportBackup(projects)} title="Baixar cópia de segurança"><Download className="h-4 w-4"/> Backup</Button><Button variant="ghost" size="sm" onClick={() => uploadRef.current?.click()}><Upload className="h-4 w-4"/> Importar</Button><input ref={uploadRef} type="file" accept="application/json,.json" className="hidden" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; try { const incoming = parseBackup(JSON.parse(await file.text())); for (const project of incoming) await saveProject({ ...project, id: crypto.randomUUID() }); setProjects(await listProjects()); setNotice("Cópia de segurança importada."); } catch { setNotice("Arquivo inválido ou não foi possível importar."); } e.target.value = ""; }}/></div></div>
+      {!loaded ? <p className="text-sm text-muted-foreground">Abrindo projetos…</p> : projects.length === 0 ? <div className="border-y border-border py-9 text-sm text-muted-foreground">Seu primeiro projeto começa com uma conversa.</div> : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{projects.map(project => <article key={project.id} className="overflow-hidden rounded-lg border border-border bg-card"><Button variant="ghost" onClick={() => open(project)} className="h-auto w-full flex-col items-start gap-0 rounded-none p-0 text-left"><div className="flex aspect-[2/1] w-full items-center justify-center border-b border-border bg-muted">{project.code ? <Code2 className="h-10 w-10 text-primary"/> : <MessageCircle className="h-10 w-10 text-muted-foreground"/>}</div><div className="w-full px-4 pt-4"><h3 className="truncate text-base font-semibold">{project.title}</h3><p className="mt-2 truncate text-xs font-normal text-muted-foreground">{chatText(project.messages.at(-1)?.text ?? "Conversa em aberto")}</p></div></Button><div className="flex items-center justify-between p-4 pt-3"><time className="text-xs text-muted-foreground">{new Date(project.updatedAt).toLocaleDateString("pt-BR")}</time><div className="flex gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Renomear ${project.title}`} onClick={() => { setRenameId(project.id); setRenameText(project.title); }}><Pencil className="h-3.5 w-3.5"/></Button><Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Excluir ${project.title}`} onClick={() => setDeleteId(project.id)}><Trash2 className="h-3.5 w-3.5"/></Button></div></div></article>)}</div>}
+      <p className="mt-5 text-xs text-muted-foreground">Salvos neste navegador · Faça backup antes de limpar os dados ou trocar de aparelho.</p></section>
+    </div></main> : <div className="flex min-h-0 flex-1">
+      <aside className={`${mView === "chat" ? "flex" : "hidden"} w-full shrink-0 flex-col border-r border-border bg-card md:flex md:w-[380px]`}><div className="border-b border-border px-4 py-3"><h1 className="truncate text-sm font-semibold">{active.title}</h1><p className="mt-1 text-xs text-muted-foreground">{saved}</p></div><div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">{!active.messages.length && <h2 className="pt-5 text-xl font-semibold">O que vamos construir?</h2>}{active.messages.map((message,i) => <div key={i} className={message.role === "user" ? "ml-6 whitespace-pre-wrap break-words rounded-lg bg-secondary px-3 py-2 text-sm" : "whitespace-pre-wrap break-words text-sm leading-relaxed"}>{message.role === "user" ? message.text : chatText(message.text)}{message.role === "model" && extractCode(message.text) && <Button size="sm" variant="outline" className="mt-3 md:hidden" onClick={() => { setMView("app"); setTab("preview"); }}><Eye/> Abrir Preview</Button>}</div>)}{busy && <div className="flex items-center gap-2 text-sm text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-primary"/>{active.mode === "chat" ? "Pensando com você…" : "Criando seu projeto…"}</div>}<div ref={endRef}/></div>{composer}</aside>
+      <main className={`${mView === "app" ? "flex" : "hidden"} min-w-0 flex-1 flex-col md:flex`}><div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2"><Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMView("chat")}><ArrowLeft className="h-4 w-4"/> Chat</Button>{(["preview", "code"] as const).map(value => <Button key={value} size="sm" variant={tab === value ? "secondary" : "ghost"} onClick={() => setTab(value)}>{value === "preview" ? <Eye/> : <Code2/>}{value === "preview" ? "Preview" : "Código"}</Button>)}{active.code && tab === "preview" && <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Recarregar preview" onClick={() => setFrameKey(k => k + 1)}><RotateCw className="h-4 w-4"/></Button>}</div><div className="min-h-0 flex-1 bg-muted">{!active.code ? <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center"><Hammer className="h-9 w-9 text-primary"/><h2 className="text-xl font-semibold">Da conversa à criação.</h2><Button disabled={busy || !active.messages.length} onClick={() => send("Construa o projeto que planejamos nesta conversa.", true)}><WandSparkles/> Construir projeto</Button></div> : tab === "preview" ? <ForgePreview key={frameKey} code={active.code} busy={busy} onRepair={error => send(`Corrija este erro sem mudar o design: ${error}. Devolva o App completo.`, true)}/> : <pre className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed"><code>{active.code}</code></pre>}</div></main>
+    </div>}
+    {(renameId || deleteId) && <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-5 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-label={renameId ? "Renomear projeto" : "Excluir projeto"} className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-5"><h2 className="text-lg font-semibold">{renameId ? "Renomear projeto" : "Excluir este projeto?"}</h2>{renameId ? <input aria-label="Nome do projeto" value={renameText} onChange={e => setRenameText(e.target.value)} className="w-full rounded-md border border-border bg-background p-2"/> : <p className="text-sm text-muted-foreground">Esta ação remove a conversa e o site deste navegador.</p>}<div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => { setRenameId(""); setDeleteId(""); }}>Cancelar</Button><Button disabled={!!renameId && !renameText.trim()} variant={deleteId ? "destructive" : "default"} onClick={async () => { if (renameId) { const project = projects.find(p => p.id === renameId); if (project) await persist({ ...project, title: renameText.trim(), updatedAt: new Date().toISOString() }); setRenameId(""); } else { try { await deleteProject(deleteId); setProjects(p => p.filter(item => item.id !== deleteId)); setDeleteId(""); } catch { setNotice("Não foi possível excluir."); } } }}>{renameId ? "Salvar" : "Excluir"}</Button></div></div></div>}
+  </div>;
 }
