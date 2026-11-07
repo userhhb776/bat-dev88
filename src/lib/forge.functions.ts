@@ -63,7 +63,7 @@ export const getBalance = createServerFn({ method: "GET" }).middleware([privateA
     return { balances: result.balance_infos.map(b => ({ currency: b.currency, total: Number(b.total_balance) })), error: "" };
   } catch { return { balances: [], error: "Saldo indisponível." }; }
 });
-const publishInput = z.object({ code: z.string().min(1).max(300000), name: z.string().min(1).max(120) });
+const publishInput = z.object({ code: z.string().min(1).max(400000), name: z.string().min(1).max(120), exact: z.boolean().optional() });
 export const integrationStatus = createServerFn({ method: "GET" }).middleware([privateAccess]).handler(async () => ({
   vercel: !!process.env['VERCEL_TOKEN'], github: !!process.env['GITHUB_TOKEN'],
 }));
@@ -73,13 +73,15 @@ export const publishVercel = createServerFn({ method: "POST" }).middleware([priv
   try {
     const response = await fetch("https://api.vercel.com/v13/deployments", {
       method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: `batdev-${slugify(data.name)}`.slice(0, 52), target: "production",
+      body: JSON.stringify({ name: data.exact ? slugify(data.name).slice(0, 52) : `batdev-${slugify(data.name)}`.slice(0, 52), target: "production",
         files: Object.entries(projectFiles(data.code)).map(([file, content]) => ({ file, data: content })),
         projectSettings: { framework: "vite", buildCommand: "vite build", outputDirectory: "dist", installCommand: "npm install" } }),
     });
     const result = await response.json() as { alias?: string[]; url?: string; error?: { message?: string } };
     if (!response.ok) { console.error("Vercel", response.status, result); return { url: "", error: `A Vercel recusou a publicação (${response.status}): ${result.error?.message ?? "erro desconhecido"}` }; }
-    return { url: `https://${result.alias?.[0] ?? result.url}`, error: "" };
+    const wanted = `${slugify(data.name).slice(0, 52)}.vercel.app`;
+    const alias = result.alias?.includes(wanted) ? wanted : result.alias?.slice().sort((a, b) => a.length - b.length)[0];
+    return { url: `https://${alias ?? result.url}`, error: "" };
   } catch { return { url: "", error: "A conexão com a Vercel falhou." }; }
 });
 export const saveGitHub = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(publishInput.extend({ repo: z.string().max(100).optional() })).handler(async ({ data }) => {
@@ -123,7 +125,7 @@ async function storage() {
   if (error) await s.createBucket(BUCKET, { public: false });
   return s.from(BUCKET);
 }
-const projectSchema = z.object({ id: z.string().uuid(), title: z.string().min(1).max(200), messages: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string() })).max(500), code: z.string().max(400000), mode: z.enum(["chat", "build"]), updatedAt: z.string(), repo: z.string().optional(), repoUrl: z.string().optional(), siteUrl: z.string().optional() });
+const projectSchema = z.object({ id: z.string().uuid(), title: z.string().min(1).max(200), messages: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string() })).max(500), code: z.string().max(400000), mode: z.enum(["chat", "build"]), updatedAt: z.string(), repo: z.string().optional(), repoUrl: z.string().optional(), siteUrl: z.string().optional(), siteName: z.string().optional() });
 export const cloudList = createServerFn({ method: "GET" }).middleware([privateAccess]).handler(async () => {
   try {
     const bucket = await storage();
@@ -146,4 +148,18 @@ export const cloudSave = createServerFn({ method: "POST" }).middleware([privateA
 });
 export const cloudDelete = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(z.object({ id: z.string().uuid() })).handler(async ({ data }) => {
   try { const { error } = await (await storage()).remove([`${data.id}.json`]); return { ok: !error }; } catch { return { ok: false }; }
+});
+
+// Arquivos do chat (imagens/vídeos) vão para um bucket público do Supabase do usuário, para o site usar a URL.
+export const uploadFile = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(z.object({ name: z.string().max(200), type: z.string().regex(/^(image|video)\//), base64: z.string().max(11_000_000) })).handler(async ({ data }) => {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const s = supabaseAdmin.storage, bucket = "batdev-assets";
+    if ((await s.getBucket(bucket)).error) await s.createBucket(bucket, { public: true });
+    const bytes = Uint8Array.from(atob(data.base64), c => c.charCodeAt(0));
+    const path = `${crypto.randomUUID()}-${slugify(data.name.replace(/\.[^.]+$/, ""))}.${data.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin"}`;
+    const { error } = await s.from(bucket).upload(path, bytes, { contentType: data.type });
+    if (error) return { url: "", error: "Não foi possível guardar o arquivo." };
+    return { url: s.from(bucket).getPublicUrl(path).data.publicUrl, error: "" };
+  } catch (e) { console.error("uploadFile", e); return { url: "", error: "Não foi possível enviar o arquivo." }; }
 });

@@ -13,7 +13,7 @@ export const SYSTEM_PROMPT = `Você é o BatDev, um designer e engenheiro front-
 - Tipografia com personalidade: carregue fontes do Google Fonts num useEffect que injeta um <link> no document.head (ex.: Playfair Display + Inter Tight, Space Grotesk + DM Sans, Fraunces + Manrope, Bebas Neue + Barlow). Aplique com style={{fontFamily:"'Fraunces', serif"}}. Nunca use só a fonte padrão.
 - Construa a experiência apropriada: ferramentas e dashboards abrem no produto funcional, não numa landing page. Sites editoriais têm ritmo e hierarquia, sem forçar seções desnecessárias. Use imagens temáticas, nunca fotos aleatórias como produto.
 - Detalhes premium: sombras suaves, bordas sutis, cantos arredondados consistentes, hover com transition e leve transform, animações de entrada (keyframes num <style> dentro do componente), ícones SVG inline elegantes.
-- Imagens reais e temáticas via https://images.unsplash.com/photo-<id>?w=1200&q=80 (use IDs que você conhece) ou https://picsum.photos/seed/<palavra>/1200/800.
+- Imagens: quando precisar de imagem exclusiva (ou o usuário pedir para gerar/criar uma imagem), GERE com IA via URL https://image.pollinations.ai/prompt/<descrição detalhada em inglês, codificada com %20>?width=1200&height=800&nologo=true (ajuste width/height ao formato). Também pode usar fotos reais https://images.unsplash.com/photo-<id>?w=1200&q=80. Se o usuário enviar uma URL de imagem/vídeo dele, use exatamente essa URL.
 - Conteúdo específico em português, sem Lorem ipsum. Não invente depoimentos como reais, telefone ou horários. Identifique preços e nomes fictícios como demonstração na conversa.
 - Interatividade real com useState: menu mobile, abas, carrinho, filtros, modais, formulários com feedback.
 
@@ -122,7 +122,7 @@ export function previewHtml(code: string) {
   function leaf(el){if(!el||el===document.body||el.id==='root')return null;if(el.tagName==='IMG')return el;var t=(el.textContent||'').trim();if(!t||t.length>600)return null;for(var i=0;i<el.children.length;i++){var c=el.children[i];if(!/^(B|I|EM|STRONG|SPAN|BR|SVG)$/.test(c.tagName))return null;}return el;}
   document.addEventListener('mouseover',function(e){if(!editing)return;var el=leaf(e.target);document.querySelectorAll('[data-bd-hover]').forEach(function(n){n.removeAttribute('data-bd-hover');});if(el)el.setAttribute('data-bd-hover','');},true);
   document.addEventListener('click',function(e){if(!editing)return;var el=leaf(e.target);e.preventDefault();e.stopPropagation();if(!el)return;
-    if(el.tagName==='IMG'){var from=el.getAttribute('src')||'';var to=prompt('Endereço (URL) da nova imagem:',from);if(to&&to!==from){el.src=to;notify('change',JSON.stringify({kind:'img',from:from,to:to}));}return;}
+    if(el.tagName==='IMG'){var from=el.getAttribute('src')||'';var to=prompt('Cole a URL da nova imagem OU descreva a imagem que a IA deve gerar:',from);if(to&&!/^(https?:|data:)/.test(to.trim()))to='https://image.pollinations.ai/prompt/'+encodeURIComponent(to.trim())+'?width=1200&height=800&nologo=true';if(to&&to!==from){el.src=to;notify('change',JSON.stringify({kind:'img',from:from,to:to}));}return;}
     if(current===el)return;current=el;var before=el.innerText;el.contentEditable='true';el.focus();
     el.addEventListener('blur',function done(){el.removeEventListener('blur',done);el.contentEditable='false';current=null;var after=el.innerText;if(after.trim()!==before.trim())notify('change',JSON.stringify({kind:'text',from:before,to:after}));});
   },true);
@@ -171,7 +171,7 @@ export function projectFiles(code: string): Record<string, string> {
         version: "0.0.1",
         type: "module",
         scripts: { dev: "vite", build: "vite build", preview: "vite preview" },
-        dependencies: { react: "^18.3.1", "react-dom": "^18.3.1" },
+        dependencies: { react: "^18.3.1", "react-dom": "^18.3.1", "lucide-react": "^0.468.0" },
         devDependencies: {
           "@vitejs/plugin-react": "^4.3.4",
           vite: "^5.4.11",
@@ -189,7 +189,8 @@ export function projectFiles(code: string): Record<string, string> {
     "index.html": `<!doctype html>\n<html lang="pt-BR">\n<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>BatDev App</title></head>\n<body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>\n</html>\n`,
     "src/index.css": `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`,
     "src/main.jsx": `import React from "react";\nimport ReactDOM from "react-dom/client";\nimport App from "./App.jsx";\nimport "./index.css";\nReactDOM.createRoot(document.getElementById("root")).render(<App />);\n`,
-    "src/App.jsx": `import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment } from "react";\n\n${body}\n\nexport default App;\n`,
+    "src/icons.jsx": `import * as L from "lucide-react";\nexport const icon = (name) => L[name] || L[name + "Icon"] || L.Circle;\n`,
+    "src/App.jsx": `import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment } from "react";\nimport { icon } from "./icons.jsx";\n${missingComponents(body).map(n => `const ${n} = icon("${n}");`).join("\n")}\n\n${body}\n\nexport default App;\n`,
   };
 }
 
@@ -208,3 +209,10 @@ export async function downloadZip(code: string) {
 }
 
 export const slugify = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "site";
+
+/** Capitalized JSX tags the generated code uses but never declares — the preview resolves them as lucide icons, so the export must too. */
+export function missingComponents(code: string) {
+  const used = new Set([...code.matchAll(/<([A-Z][A-Za-z0-9]*)\b/g)].map(m => m[1]!));
+  const builtin = new Set(["React", "Fragment", "App"]);
+  return [...used].filter(n => !builtin.has(n) && !new RegExp(`(?:function|class|const|let|var)\\s+${n}\\b|[{,]\\s*${n}\\s*[,}=]`).test(code));
+}
