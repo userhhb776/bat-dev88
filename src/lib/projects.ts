@@ -2,8 +2,8 @@ import { z } from "zod";
 import type { Msg } from "./forge";
 
 export type Mode = "chat" | "build";
-export type Project = { id: string; title: string; messages: Msg[]; code: string; mode: Mode; updatedAt: string };
-const schema = z.object({ id: z.string(), title: z.string().min(1), messages: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string() })), code: z.string(), mode: z.enum(["chat", "build"]), updatedAt: z.string() });
+export type Project = { id: string; title: string; messages: Msg[]; code: string; mode: Mode; updatedAt: string; repo?: string; repoUrl?: string; siteUrl?: string };
+const schema = z.object({ id: z.string(), title: z.string().min(1), messages: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string() })), code: z.string(), mode: z.enum(["chat", "build"]), updatedAt: z.string(), repo: z.string().optional(), repoUrl: z.string().optional(), siteUrl: z.string().optional() });
 export function parseBackup(value: unknown): Project[] {
   return z.object({ version: z.literal(1), projects: z.array(schema) }).parse(value).projects;
 }
@@ -35,6 +35,6 @@ export const saveProject = (project: Project) => transaction("readwrite", store 
 export const deleteProject = (id: string) => transaction("readwrite", store => store.delete(id));
 export function exportBackup(projects: Project[]) {
   const url = URL.createObjectURL(new Blob([JSON.stringify({ version: 1, projects }, null, 2)], { type: "application/json" }));
-  const link = document.createElement("a"); link.href = url; link.download = "forge-projetos.json"; link.click();
+  const link = document.createElement("a"); link.href = url; link.download = "batdev-projetos.json"; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
