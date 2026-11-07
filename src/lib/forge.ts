@@ -41,7 +41,7 @@ export function extractCode(text: string): string | null {
 export function buildPrompt(mode: "chat" | "build", date: Date, code = "") {
   return `${SYSTEM_PROMPT}
 Data atual: ${date.toISOString().slice(0, 10)}. Use o ano ${date.getUTCFullYear()} em coleções e copyright, exceto se o usuário pedir outra data. Não alegue acesso a notícias ou à internet.
-${mode === "chat" ? "MODO CONVERSA: apenas converse e planeje. Nunca gere código, nem quando pedirem para criar. Explique brevemente que podem escolher Construir. Não envie o arquivo atual nem o reescreva. Responda em até 180 palavras, naturalmente." : "MODO CONSTRUÇÃO: implemente o pedido; devolva um único bloco jsx completo. Preserve as partes não mencionadas em alterações."}
+${mode === "chat" ? "MODO CONVERSA: apenas converse e planeje. Nunca gere código, nem quando pedirem para criar. Não envie o arquivo atual nem o reescreva. Responda em até 100 palavras, naturalmente, em 1 ou 2 parágrafos. Não dê checklist de identidade, paleta ou fontes; fale do objetivo da pessoa. No máximo UMA pergunta, apenas se a resposta for necessária. Não repita a instrução de escolher Construir a cada mensagem." : "MODO CONSTRUÇÃO: implemente o pedido; devolva um único bloco jsx completo. Preserve as partes não mencionadas em alterações."}
 ${mode === "build" && code ? `Site atual (base obrigatória para alterações):\n${code}` : ""}`;
 }
 export function prepareHistory(history: Msg[], mode: "chat" | "build") {
