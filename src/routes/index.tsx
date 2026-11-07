@@ -114,3 +114,11 @@ function Index() {
 function BatMark({ className = "h-6 w-6" }: { className?: string }) {
   return <svg viewBox="0 0 64 32" aria-hidden="true" className={`${className} shrink-0 fill-primary`}><path d="M32 6l3 6 4-5 1 7c6-6 14-8 24-5-6 3-9 8-9 15-5-4-11-4-16 0-2-3-5-4-7-4s-5 1-7 4c-5-4-11-4-16 0 0-7-3-12-9-15 10-3 18-1 24 5l1-7 4 5z"/></svg>;
 }
+
+const BUILD_STEPS = ["Lendo seu pedido", "Escolhendo paleta de cores e fontes", "Desenhando a versão para celular", "Criando o topo e o menu", "Montando as seções e os cartões", "Adicionando botões e interações", "Ajustando para telas maiores", "Revisando o código", "Finalizando o arquivo App.jsx"];
+function WorkLog({ chat }: { chat: boolean }) {
+  const [step, setStep] = useState(0);
+  useEffect(() => { if (chat) return; const t = setInterval(() => setStep(s => Math.min(s + 1, BUILD_STEPS.length - 1)), 7000); return () => clearInterval(t); }, [chat]);
+  if (chat) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-primary"/>Pensando com você…</div>;
+  return <ol className="space-y-1.5 rounded-lg border border-border bg-background/50 p-3 text-xs" aria-live="polite">{BUILD_STEPS.slice(0, step + 1).map((s, i) => <li key={s} className={`flex items-center gap-2 ${i === step ? "text-foreground" : "text-muted-foreground"}`}><span className={`h-1.5 w-1.5 rounded-full ${i === step ? "animate-pulse bg-primary" : "bg-muted-foreground"}`}/>{s}{i === step ? "…" : " ✓"}</li>)}</ol>;
+}
