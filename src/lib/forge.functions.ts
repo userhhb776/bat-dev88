@@ -80,7 +80,7 @@ export const saveGitHub = createServerFn({ method: "POST" }).middleware([private
   const gh = async (path: string, init: RequestInit = {}) => {
     const response = await fetch(`https://api.github.com/${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "BatDev", "Content-Type": "application/json" } });
     const body = response.status === 204 ? {} : await response.json().catch(() => ({}));
-    return { ok: response.ok, status: response.status, body: body as Record<string, any> };
+    return { ok: response.ok, status: response.status, body: body as any };
   };
   try {
     const user = await gh("user");
