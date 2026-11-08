@@ -36,7 +36,15 @@ export const SYSTEM_PROMPT = `Você é o BatDev, um designer e engenheiro front-
 - Apenas ao construir: ANTES do código, um bloco \`\`\`decisoes com 3 a 7 linhas no formato "tipo: descrição curta", onde tipo é cor, fonte, layout, interacao, arquivo ou conteudo (ex.: "cor: #0f1a14 verde-floresta como fundo", "arquivo: App.jsx — nova seção de preços"). Depois, exatamente um bloco \`\`\`jsx com o arquivo completo.
 - Defina \`function App()\` como raiz. Sem import; hooks já são globais (useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment).
 - Estilo apenas com Tailwind (valores arbitrários permitidos) + um <style> opcional para keyframes/fontes.
-- Em alterações, devolva SEMPRE o arquivo COMPLETO atualizado, mantendo a mesma identidade visual.`;
+- Em alterações, devolva SEMPRE o arquivo COMPLETO atualizado, mantendo a mesma identidade visual.
+
+## Qualidade obrigatória do código (o site é compilado com esbuild na publicação — um erro derruba tudo)
+- Feche TODA string de atributo: className="..." sempre termina com aspas antes do >. Revise mentalmente cada tag antes de terminar.
+- Cada tag aberta precisa ser fechada; tags vazias usam /> (img, input, br, path, circle). Um único elemento raiz no return.
+- Nunca escreva { ou } soltos no texto JSX; use {"{"}. Use className, htmlFor, strokeWidth (camelCase), nunca class.
+- Não deixe classes coladas ou erradas (ex.: "flexflex"). Não use variáveis, componentes ou funções que não definiu; ícones apenas como componentes lucide (ex.: <ArrowRight />) ou SVG inline.
+- Desempenho: no máximo 4 imagens Pollinations por página e só onde forem essenciais; para fotos genéricas prefira Unsplash. Toda <img> com loading="lazy" (exceto a primeira) e alt. Nada de setInterval mais rápido que 1s, nem loops pesados no render.
+- Ao corrigir um erro informado, ache a linha exata citada, conserte a causa e confira o arquivo inteiro por erros do mesmo tipo.`;
 
 export type Msg = { role: "user" | "model"; text: string };
 
@@ -105,11 +113,12 @@ function cleanForPreview(code: string) {
 export function previewHtml(code: string) {
   const source = JSON.stringify(cleanForPreview(code)).replace(/</g, "\\u003c");
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link rel="preconnect" href="https://cdn.jsdelivr.net"/>
 <script src="https://cdn.tailwindcss.com"></script>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
-<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
 </head><body><div id="root"></div>
 <script>
 (function(){
@@ -145,7 +154,7 @@ export function previewHtml(code: string) {
       has:function(_,key){return key!==Symbol.unscopables && (key in globals || (typeof key==='string' && /^[A-Z]/.test(key) && !(key in window)));},
       get:function(target,key){if(key===Symbol.unscopables) return undefined;return key in target ? target[key] : icon(key);}
     });
-    var compiled=Babel.transform(${source},{presets:[['react',{runtime:'classic'}]],filename:'App.jsx'}).code;
+    var compiled;try{compiled=Babel.transform(${source},{presets:[['react',{runtime:'classic'}]],filename:'App.jsx'}).code;}catch(se){throw new Error('Erro de sintaxe no código: '+String(se.message).split('\\n').slice(0,6).join(' | '));}
     var App=new Function('scope','with(scope){'+compiled+';return typeof App !== "undefined" ? App : undefined;}')(scope);
     if(typeof App!=='function') throw new Error('O código gerado não contém um aplicativo válido.');
     class Boundary extends React.Component {
