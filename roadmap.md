@@ -9,3 +9,8 @@
 - [x] Read public GitHub repositories without account connection and ZIP source attachments.
 - [x] Per-site Supabase connection in preview, generation, backups and exports; SQL handoff for setup.
 - [x] Verify source import, connection persistence and generated runtime.
+
+## Sales-page foundation
+- [x] Strengthen conversion guidance without fabricated claims or guarantees.
+- [x] Add portable consent-aware Meta Pixel and safe attribution helpers, simulated in preview.
+- [x] Verify preview/export helper behavior and document adaptation to the user's SaaS (32 tests and browser checks; real Meta events and a fresh AI generation/deployment were not exercised).
