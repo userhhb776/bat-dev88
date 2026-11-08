@@ -207,7 +207,7 @@ export const readPublicRepository = createServerFn({ method: "POST" }).middlewar
     const { owner, repo, ref } = parseGitHubRepository(data.url);
     const headers = { Accept: "application/vnd.github+json", "User-Agent": "BatDev" };
     const get = async (path: string) => {
-      const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${path}`, { headers, signal: AbortSignal.timeout(20000), redirect: "error" });
+      const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${path ? `/${path}` : ""}`, { headers, signal: AbortSignal.timeout(20000), redirect: "error" });
       if (!response.ok) {
         if (response.status === 404) throw new Error("Repositório não encontrado ou privado. Para privados, envie o ZIP.");
         if (response.status === 403 || response.status === 429) throw new Error("O GitHub limitou a leitura pública. Tente depois ou envie o ZIP.");
