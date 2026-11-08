@@ -6,6 +6,6 @@
 - [x] Add VERCEL_TOKEN and GITHUB_TOKEN.
 
 ## Current integrations
-- [ ] Read public GitHub repositories without account connection and ZIP source attachments.
-- [ ] Per-site Supabase connection in preview, generation, backups and exports; SQL handoff for setup.
-- [ ] Verify source import, connection persistence and generated runtime.
+- [x] Read public GitHub repositories without account connection and ZIP source attachments.
+- [x] Per-site Supabase connection in preview, generation, backups and exports; SQL handoff for setup.
+- [x] Verify source import, connection persistence and generated runtime.
