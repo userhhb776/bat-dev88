@@ -60,7 +60,7 @@ export function parseDecisions(text: string): Decision[] {
 }
 
 export function extractCode(text: string): string | null {
-  text = text.replace(/```decis[oõ]es\s*\n[\s\S]*?```/gi, "");
+  text = text.replace(/```(?:decis[oõ]es|sql)\s*\n[\s\S]*?```/gi, "");
   const m = text.match(/```(?:jsx|tsx|javascript|js|react)?\s*\n([\s\S]*?)(```|$)/);
   return m?.[1] ? m[1].trim() : null;
 }

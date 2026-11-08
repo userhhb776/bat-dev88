@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { extractSql, siteConnectionSchema } from "@/lib/site-connection";
 import { parseBackup } from "@/lib/projects";
-import { previewHtml, projectFiles } from "@/lib/forge";
+import { extractCode, previewHtml, projectFiles } from "@/lib/forge";
 const connection = { url: "https://example-project.supabase.co", publicKey: "sb_publishable_test_public_key" };
 
 describe("generated site Supabase", () => {
@@ -32,5 +32,6 @@ describe("generated site Supabase", () => {
   });
   it("extracts database setup independently from app code", () => {
     expect(extractSql("```sql\nselect 1;\n```\n```jsx\nfunction App(){}\n```")).toBe("select 1;");
+    expect(extractCode("```sql\nselect 1;\n```\nConfigure o banco.\n```jsx\nfunction App(){}\n```")).toBe("function App(){}");
   });
 });
