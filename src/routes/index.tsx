@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { Download, Eye, Code2, Send, Square, RotateCw, Plus, ArrowLeft, MessageCircle, WandSparkles, FolderOpen, Pencil, Trash2, Upload, Rocket, Github, Check, X, ExternalLink, Paperclip, LoaderCircle } from "lucide-react";
 import { applyEdits, downloadZip, extractCode, parseDecisions, slugify, wantsBuild, type VisualEdit } from "@/lib/forge";
-import { cloudDelete, cloudList, cloudSave, uploadFile, integrationStatus, publishVercel, saveGitHub } from "@/lib/forge.functions";
+import { cloudDelete, cloudList, cloudSave, uploadFile, describeImage, integrationStatus, publishVercel, saveGitHub } from "@/lib/forge.functions";
 import { deleteProject, exportBackup, listProjects, newProject, parseBackup, saveProject, type Project } from "@/lib/projects";
 import { ForgePreview } from "@/components/forge-preview";
 import { ForgeAccess } from "@/components/forge-access";
@@ -25,7 +25,7 @@ function Index() {
   const [publishName, setPublishName] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<{ name: string; text: string }[]>([]), [attaching, setAttaching] = useState(false);
   const attachRef = useRef<HTMLInputElement>(null);
-  const uploadAsset = useServerFn(uploadFile);
+  const uploadAsset = useServerFn(uploadFile), describe = useServerFn(describeImage);
   const [projects, setProjects] = useState<Project[]>([]), [active, setActive] = useState<Project | null>(null);
   const [loaded, setLoaded] = useState(false), [input, setInput] = useState(""), [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(""), [saved, setSaved] = useState(""), [balanceRefresh, setBalanceRefresh] = useState(0);
@@ -100,9 +100,11 @@ function Index() {
         } else if (/^(image|video)\//.test(file.type)) {
           if (file.size > 8_000_000) { setNotice(`${file.name} passa de 8 MB.`); continue; }
           const base64 = await new Promise<string>((ok, fail) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] ?? ""); r.onerror = fail; r.readAsDataURL(file); });
-          const result = await uploadAsset({ data: { name: file.name, type: file.type, base64 } });
+          const isImage = file.type.startsWith("image");
+          const [result, seen] = await Promise.all([uploadAsset({ data: { name: file.name, type: file.type, base64 } }), isImage && file.size < 6_000_000 ? describe({ data: { base64 } }).catch(() => ({ text: "" })) : Promise.resolve({ text: "" })]);
           if (result.error) { setNotice(result.error); continue; }
-          setAttachments(a => [...a, { name: file.name, text: `${file.type.startsWith("video") ? "Vídeo" : "Imagem"} enviada pelo usuário ("${file.name}"), use exatamente esta URL no site: ${result.url}` }]);
+          const vision = seen.text ? `\nO que aparece nesta imagem (lido por visão): ${seen.text}\nSe for um print de erro, corrija o erro; se for referência de site, siga esse estilo e estrutura.` : "";
+          setAttachments(a => [...a, { name: file.name, text: `${isImage ? "Imagem" : "Vídeo"} enviada pelo usuário ("${file.name}"), URL: ${result.url}${vision}` }]);
         } else setNotice(`Ainda não leio arquivos do tipo ${file.name.split(".").pop()}.`);
       } catch { setNotice(`Não foi possível anexar ${file.name}.`); }
     }
@@ -128,8 +130,9 @@ function Index() {
       const result = { text: full.replace(/\n?\[\[BATDEV_ERRO:[\s\S]*?\]\]/g, ""), error: failure && !extractCode(full) ? failure[1] : "" };
       if (result.error) { setNotice(result.error); return; }
       if (!result.text.trim()) { setNotice("A IA retornou uma resposta vazia. Tente novamente."); return; }
+      // Se só faltou fechar as crases, fechamos nós mesmos e aproveitamos todo o código gerado.
+      if ((result.text.match(/```/g) ?? []).length % 2) result.text = result.text.trimEnd() + "\n```";
       const code = mode === "build" ? extractCode(result.text) : null;
-      if (code && (result.text.match(/```/g) ?? []).length % 2) { setNotice("A resposta veio incompleta; seu site anterior foi mantido."); return; }
       const completed: Project = { ...pending, messages: [...pending.messages, { role: "model", text: result.text }], code: code ?? project.code, updatedAt: new Date().toISOString() };
       setActive(completed); await persist(completed);
       if (code) { setTab("preview"); setMView("app"); setFrameKey(k => k + 1); void syncGitHub(completed); }
