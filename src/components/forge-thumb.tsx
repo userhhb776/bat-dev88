@@ -8,7 +8,7 @@ export function ForgeThumb({ code }: { code: string }) {
   const html = useMemo(() => (visible ? previewHtml(code) : ""), [visible, code]);
   useEffect(() => {
     const el = box.current; if (!el) return;
-    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVisible(true); io.disconnect(); } }, { rootMargin: "200px" });
+    const io = new IntersectionObserver(([e]) => { if (e?.isIntersecting) { setVisible(true); io.disconnect(); } }, { rootMargin: "200px" });
     const ro = new ResizeObserver(() => setScale(el.clientWidth / 1280));
     io.observe(el); ro.observe(el);
     return () => { io.disconnect(); ro.disconnect(); };
