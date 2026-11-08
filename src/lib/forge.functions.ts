@@ -163,3 +163,19 @@ export const uploadFile = createServerFn({ method: "POST" }).middleware([private
     return { url: s.from(bucket).getPublicUrl(path).data.publicUrl, error: "" };
   } catch (e) { console.error("uploadFile", e); return { url: "", error: "Não foi possível enviar o arquivo." }; }
 });
+
+// Leitura de imagens (prints, referências) pela API em nuvem do Ollama; sem chave, segue sem visão.
+export const describeImage = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(z.object({ base64: z.string().max(9_000_000) })).handler(async ({ data }) => {
+  const key = process.env['OLLAMA_API_KEY'];
+  if (!key) return { text: "" };
+  try {
+    const response = await fetch("https://ollama.com/api/chat", {
+      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: process.env['OLLAMA_VISION_MODEL'] || "qwen3-vl:235b", stream: false, messages: [{ role: "user", images: [data.base64],
+        content: "Descreva em português, com precisão, esta imagem para um desenvolvedor web: se for print de erro, transcreva a mensagem exata; se for site/app, descreva layout, seções, cores (hex aproximado), fontes, textos visíveis e estilo. Máximo 250 palavras." }] }),
+    });
+    if (!response.ok) { console.error("Ollama", response.status, await response.text().catch(() => "")); return { text: "" }; }
+    const result = await response.json() as { message?: { content?: string } };
+    return { text: (result.message?.content ?? "").trim().slice(0, 3000) };
+  } catch (e) { console.error("describeImage", e); return { text: "" }; }
+});

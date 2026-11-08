@@ -34,7 +34,7 @@ export const Route = createFileRoute("/api/generate")({
             break;
           }
           const reader = response.body.getReader(), decoder = new TextDecoder();
-          let buffer = "", finish = "";
+          let buffer = "", finish = "", head = round > 0 ? "" : null as string | null;
           for (;;) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -47,7 +47,9 @@ export const Route = createFileRoute("/api/generate")({
               try {
                 const chunk = JSON.parse(payload) as { choices?: { delta?: { content?: string }; finish_reason?: string | null }[] };
                 const piece = chunk.choices?.[0]?.delta?.content ?? "";
-                if (piece) { text += piece; controller.enqueue(encoder.encode(piece)); }
+                let out = piece;
+                if (head !== null && out) { head += out; if (head.length < 12 && !head.includes("\n")) continue; out = head.replace(/^\s*```[a-z]*\s*\n/i, ""); head = null; }
+                if (out) { text += out; controller.enqueue(encoder.encode(out)); }
                 if (chunk.choices?.[0]?.finish_reason) finish = chunk.choices[0].finish_reason;
               } catch { /* partial line */ }
             }
