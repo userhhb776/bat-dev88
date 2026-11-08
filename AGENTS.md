@@ -23,3 +23,5 @@
 - Exported/published projects declare undeclared JSX tags as lucide-react icons (src/icons.jsx shim); why: the preview resolves them at runtime, and the Vercel build failed without them.
 - Chat attachments: text files are inlined into the prompt; images/videos go to a public Supabase Storage bucket and their URL is given to the model. AI images use Pollinations URLs (no gateway).
 - Image attachments are described by Ollama Cloud vision (OLLAMA_API_KEY, describeImage) before DeepSeek builds; why: DeepSeek has no vision.
+- Import source ZIPs with bounded expansion and exclude metadata, secrets and dependencies; public GitHub reads use fixed-host unauthenticated API requests behind the Forge session. Why: no GitHub account is required and imported scripts are never executed on the server.
+- Generated sites store their own validated public Supabase connection and SQL alongside code; preview uses in-memory auth, exports use the same client and SPA rewrites, and database setup is explicitly manual. Why: preserve isolation from workspace credentials without pretending deployment applies database permissions.
