@@ -3,14 +3,16 @@ import { useServerFn } from "@tanstack/react-start";
 import { LockKeyhole, Mail } from "lucide-react";
 import { accessStatus, unlockForge } from "@/lib/forge.functions";
 import { Button } from "./ui/button";
+import { ForgeLanding } from "./forge-landing";
 
 export function ForgeAccess({ children }: { children: ReactNode }) {
   const status = useServerFn(accessStatus), unlock = useServerFn(unlockForge);
   const [ready, setReady] = useState(false), [allowed, setAllowed] = useState(false);
-  const [email, setEmail] = useState(""), [password, setPassword] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState(""), [password, setPassword] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false), [login, setLogin] = useState(false);
   useEffect(() => { status().then(setAllowed).catch(() => setError("Não foi possível verificar seu acesso.")).finally(() => setReady(true)); }, []);
   if (!ready) return <div className="flex h-dvh items-center justify-center bg-background text-muted-foreground">Abrindo BatDev…</div>;
   if (allowed) return children;
+  if (!login) return <ForgeLanding onEnter={() => setLogin(true)}/>;
   const field = "mt-2 w-full rounded-md border border-border bg-background/60 p-3 pl-10 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30";
   return <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background p-5 text-foreground">
     <div aria-hidden className="pointer-events-none absolute -top-40 left-1/2 h-96 w-[48rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"/>
