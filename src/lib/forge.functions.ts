@@ -2,6 +2,8 @@ import { createMiddleware, createServerFn } from "@tanstack/react-start";
 import { useSession } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { buildPrompt, prepareHistory, projectFiles, slugify } from "./forge";
+import { formatSources, isSourcePath, parseGitHubRepository, sourcePriority, type SourceFile } from "./source-import";
+import { siteConnectionSchema } from "./site-connection";
 
 const privateAccess = createMiddleware({ type: "function" }).server(async ({ next }) => {
   const secret = process.env['FORGE_SESSION_SECRET'];
@@ -63,7 +65,7 @@ export const getBalance = createServerFn({ method: "GET" }).middleware([privateA
     return { balances: result.balance_infos.map(b => ({ currency: b.currency, total: Number(b.total_balance) })), error: "" };
   } catch { return { balances: [], error: "Saldo indisponível." }; }
 });
-const publishInput = z.object({ code: z.string().min(1).max(400000), name: z.string().min(1).max(120), exact: z.boolean().optional() });
+const publishInput = z.object({ code: z.string().min(1).max(400000), name: z.string().min(1).max(120), exact: z.boolean().optional(), connection: siteConnectionSchema.optional(), sql: z.string().max(100000).optional() });
 export const integrationStatus = createServerFn({ method: "GET" }).middleware([privateAccess]).handler(async () => ({
   vercel: !!process.env['VERCEL_TOKEN'], github: !!process.env['GITHUB_TOKEN'],
 }));
@@ -74,7 +76,7 @@ export const publishVercel = createServerFn({ method: "POST" }).middleware([priv
     const response = await fetch("https://api.vercel.com/v13/deployments", {
       method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ name: data.exact ? slugify(data.name).slice(0, 52) : `batdev-${slugify(data.name)}`.slice(0, 52), target: "production",
-        files: Object.entries(projectFiles(data.code)).map(([file, content]) => ({ file, data: content })),
+        files: Object.entries(projectFiles(data.code, data.connection, data.sql)).map(([file, content]) => ({ file, data: content })),
         projectSettings: { framework: "vite", buildCommand: "vite build", outputDirectory: "dist", installCommand: "npm install" } }),
     });
     const result = await response.json() as { id?: string; url?: string; error?: { message?: string } };
@@ -128,7 +130,7 @@ export const saveGitHub = createServerFn({ method: "POST" }).middleware([private
     const parent = ref.body.object.sha as string;
     const base = await gh(`repos/${login}/${repo}/git/commits/${parent}`);
     const tree = await gh(`repos/${login}/${repo}/git/trees`, { method: "POST", body: JSON.stringify({ base_tree: base.body.tree?.sha,
-      tree: Object.entries(projectFiles(data.code)).map(([path, content]) => ({ path, mode: "100644", type: "blob", content })) }) });
+      tree: Object.entries(projectFiles(data.code, data.connection, data.sql)).map(([path, content]) => ({ path, mode: "100644", type: "blob", content })) }) });
     if (!tree.ok) return { repo: "", url: "", error: `Falha ao enviar arquivos (${tree.status}).` };
     const commit = await gh(`repos/${login}/${repo}/git/commits`, { method: "POST", body: JSON.stringify({ message: `BatDev: ${new Date().toISOString().slice(0, 16).replace("T", " ")}`, tree: tree.body.sha, parents: [parent] }) });
     const moved = await gh(`repos/${login}/${repo}/git/refs/heads/${branch}`, { method: "PATCH", body: JSON.stringify({ sha: commit.body.sha }) });
@@ -145,7 +147,7 @@ async function storage() {
   if (error) await s.createBucket(BUCKET, { public: false });
   return s.from(BUCKET);
 }
-const projectSchema = z.object({ id: z.string().uuid(), title: z.string().min(1).max(200), messages: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string() })).max(500), code: z.string().max(400000), mode: z.enum(["chat", "build"]), updatedAt: z.string(), repo: z.string().optional(), repoUrl: z.string().optional(), siteUrl: z.string().optional(), siteName: z.string().optional() });
+const projectSchema = z.object({ id: z.string().uuid(), title: z.string().min(1).max(200), messages: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string() })).max(500), code: z.string().max(400000), mode: z.enum(["chat", "build"]), updatedAt: z.string(), repo: z.string().optional(), repoUrl: z.string().optional(), siteUrl: z.string().optional(), siteName: z.string().optional(), connection: siteConnectionSchema.optional(), sql: z.string().max(100000).optional() });
 export const cloudList = createServerFn({ method: "GET" }).middleware([privateAccess]).handler(async () => {
   try {
     const bucket = await storage();
@@ -198,4 +200,38 @@ export const describeImage = createServerFn({ method: "POST" }).middleware([priv
     const result = await response.json() as { message?: { content?: string } };
     return { text: (result.message?.content ?? "").trim().slice(0, 3000) };
   } catch (e) { console.error("describeImage", e); return { text: "" }; }
+});
+
+export const readPublicRepository = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(z.object({ url: z.string().url().max(500) })).handler(async ({ data }) => {
+  try {
+    const { owner, repo, ref } = parseGitHubRepository(data.url);
+    const headers = { Accept: "application/vnd.github+json", "User-Agent": "BatDev" };
+    const get = async (path: string) => {
+      const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${path ? `/${path}` : ""}`, { headers, signal: AbortSignal.timeout(20000), redirect: "error" });
+      if (!response.ok) {
+        if (response.status === 404) throw new Error("Repositório não encontrado ou privado. Para privados, envie o ZIP.");
+        if (response.status === 403 || response.status === 429) throw new Error("O GitHub limitou a leitura pública. Tente depois ou envie o ZIP.");
+        throw new Error(`O GitHub não respondeu (${response.status}).`);
+      }
+      const body = await response.text();
+      if (body.length > 4_000_000) throw new Error("Repositório grande demais; envie um ZIP com os arquivos principais.");
+      return JSON.parse(body);
+    };
+    const info = await get("");
+    const tree = await get(`git/trees/${encodeURIComponent(ref || info.default_branch)}?recursive=1`) as { truncated?: boolean; tree?: { path: string; type: string; size?: number; sha: string }[] };
+    const candidates = (tree.tree ?? []).filter(f => f.type === "blob" && isSourcePath(f.path) && (f.size ?? 0) <= 120000).sort((a,b) => sourcePriority(a.path) - sourcePriority(b.path));
+    const files: SourceFile[] = [];
+    let total = 0;
+    for (let i = 0; i < Math.min(candidates.length, 60) && total < 180000; i += 4) {
+      const batch = await Promise.all(candidates.slice(i, Math.min(i + 4, 60)).map(async f => {
+        const blob = await get(`git/blobs/${encodeURIComponent(f.sha)}`) as { encoding?: string; content?: string };
+        if (blob.encoding !== "base64" || !blob.content) throw new Error(`Não foi possível ler ${f.path}.`);
+        const bytes = Uint8Array.from(atob(blob.content.replace(/\s/g, "")), c => c.charCodeAt(0));
+        return { path: f.path, content: new TextDecoder().decode(bytes) };
+      }));
+      files.push(...batch); total += batch.reduce((sum,f) => sum + f.content.length, 0);
+    }
+    const imported = formatSources(files, data.url, Math.max(0, candidates.length - files.length) + (tree.truncated ? 1 : 0));
+    return { ...imported, error: "" };
+  } catch (error) { return { text: "", count: 0, omitted: 0, error: error instanceof Error ? error.message : "Não foi possível ler o repositório. Envie o ZIP." }; }
 });

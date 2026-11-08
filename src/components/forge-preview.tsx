@@ -2,14 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, LoaderCircle, RotateCw, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { previewHtml, type VisualEdit } from "@/lib/forge";
+import type { SiteConnection } from "@/lib/site-connection";
 
-export function ForgePreview({ code, onRepair, busy, editing = false, onEdit }: { code: string; onRepair: (error: string) => void; busy: boolean; editing?: boolean; onEdit?: (edit: VisualEdit) => void }) {
+export function ForgePreview({ code, connection, onRepair, busy, editing = false, onEdit }: { code: string; connection?: SiteConnection | undefined; onRepair: (error: string) => void; busy: boolean; editing?: boolean; onEdit?: (edit: VisualEdit) => void }) {
   const editRef = useRef(onEdit); editRef.current = onEdit;
   const frame = useRef<HTMLIFrameElement>(null);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
-  const html = useMemo(() => previewHtml(code), [code]);
+  const html = useMemo(() => previewHtml(code, connection), [code, connection]);
 
   useEffect(() => {
     setState("loading");

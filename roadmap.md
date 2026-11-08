@@ -5,5 +5,7 @@
 - [x] Vercel one-click publish and automatic GitHub save (server-side tokens).
 - [x] Add VERCEL_TOKEN and GITHUB_TOKEN.
 
-## Later
-Uploads of images/videos, image analysis, external Supabase connector.
+## Current integrations
+- [x] Read public GitHub repositories without account connection and ZIP source attachments.
+- [x] Per-site Supabase connection in preview, generation, backups and exports; SQL handoff for setup.
+- [x] Verify source import, connection persistence and generated runtime.

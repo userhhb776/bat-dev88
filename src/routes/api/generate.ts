@@ -2,10 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useSession } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { buildPrompt, prepareHistory } from "@/lib/forge";
+import { siteConnectionSchema } from "@/lib/site-connection";
 
 const input = z.object({
   mode: z.enum(["chat", "build"]), code: z.string().max(400000),
   history: z.array(z.object({ role: z.enum(["user", "model"]), text: z.string().max(300000) })).max(200),
+  connection: siteConnectionSchema.optional(),
 });
 
 // Streams DeepSeek output as plain text so long, professional builds never hit a request timeout.
@@ -18,7 +20,7 @@ export const Route = createFileRoute("/api/generate")({
     const parsed = input.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return new Response("Pedido inválido.", { status: 400 });
     const data = parsed.data;
-    const base = [{ role: "system", content: buildPrompt(data.mode, new Date(), data.code) }, ...prepareHistory(data.history, data.mode)];
+    const base = [{ role: "system", content: buildPrompt(data.mode, new Date(), data.code, data.connection) }, ...prepareHistory(data.history, data.mode)];
     const encoder = new TextEncoder();
     const stream = new ReadableStream({ async start(controller) {
       let text = "";
