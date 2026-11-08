@@ -1,5 +1,7 @@
 import JSZip from "jszip";
 import { connectionPrompt, type SiteConnection } from "./site-connection";
+import { createSiteTracking, trackingPrompt } from "./site-tracking";
+import { cleanGeneratedSource } from "./generated-source";
 
 export const SYSTEM_PROMPT = `Você é o BatDev, um designer e engenheiro front-end sênior, caloroso e colaborativo. Você conversa em português do Brasil, como um parceiro criativo — nunca robótico.
 
@@ -92,6 +94,7 @@ export function applyEdits(code: string, edits: VisualEdit[]) {
 export function buildPrompt(mode: "chat" | "build", date: Date, code = "", connection?: SiteConnection) {
   return `${SYSTEM_PROMPT}
 ${connectionPrompt(connection)}
+${trackingPrompt}
 Data atual: ${date.toISOString().slice(0, 10)}. Use o ano ${date.getUTCFullYear()} em coleções e copyright, exceto se o usuário pedir outra data. Não alegue acesso a notícias ou à internet.
 ${mode === "chat" ? "MODO CONVERSA: apenas converse e planeje. Nunca gere código, nem quando pedirem para criar. Não envie o arquivo atual nem o reescreva. Responda em até 120 palavras, naturalmente, em 1 ou 2 parágrafos. Não dê checklist de identidade, paleta ou fontes; fale do objetivo da pessoa. No máximo UMA pergunta, apenas se a resposta for necessária. Não repita a instrução de escolher Construir a cada mensagem." : "MODO CONSTRUÇÃO: implemente o pedido; devolva um único bloco jsx completo. Preserve as partes não mencionadas em alterações."}
 ${mode === "build" && code ? `Site atual (base obrigatória para alterações):\n${code}` : ""}`;
@@ -104,13 +107,7 @@ export function prepareHistory(history: Msg[], mode: "chat" | "build") {
   }));
 }
 
-function cleanForPreview(code: string) {
-  return code
-    .replace(/^\s*import\s[\s\S]*?from\s*['"][^'"]+['"];?/gm, "")
-    .replace(/^\s*import\s*['"][^'"]+['"];?/gm, "")
-    .replace(/export\s+default\s+/g, "")
-    .replace(/^\s*export\s+/gm, "");
-}
+const cleanForPreview = cleanGeneratedSource;
 
 export function previewHtml(code: string, connection?: SiteConnection) {
   const source = JSON.stringify(cleanForPreview(code)).replace(/</g, "\\u003c");
@@ -129,7 +126,6 @@ ${connection ? '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@
   function notify(type,message){parent.postMessage({source:'forge-preview',type:type,message:message||''},'*');}
   window.addEventListener('error',function(e){if(e.target && e.target.tagName==='SCRIPT') notify('error','Não foi possível carregar os recursos do site.');});
   window.addEventListener('unhandledrejection',function(e){notify('error',String(e.reason && e.reason.message || 'Falha ao abrir o site'));});
-  document.addEventListener('error',function(e){var t=e.target;if(t&&t.tagName==='IMG'&&!t.dataset.fb){t.dataset.fb=1;t.src='https://picsum.photos/seed/'+encodeURIComponent((t.alt||'img').slice(0,20))+'/1200/800';}},true);
   var editing=false,current=null;
   var css=document.createElement('style');css.textContent='.bd-edit [data-bd-hover]{outline:2px dashed #ffd600!important;outline-offset:2px;cursor:text}.bd-edit img[data-bd-hover]{cursor:pointer}[contenteditable=true]{outline:2px solid #ffd600!important;outline-offset:2px}';document.head.appendChild(css);
   function leaf(el){if(!el||el===document.body||el.id==='root')return null;if(el.tagName==='IMG')return el;var t=(el.textContent||'').trim();if(!t||t.length>600)return null;for(var i=0;i<el.children.length;i++){var c=el.children[i];if(!/^(B|I|EM|STRONG|SPAN|BR|SVG)$/.test(c.tagName))return null;}return el;}
@@ -156,7 +152,8 @@ ${connection ? '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@
     var config=${connectionJson};
     var client=config && window.supabase ? window.supabase.createClient(config.url,config.publicKey,{auth:{persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}}) : null;
     if(config && !client) throw new Error('Não foi possível carregar o Supabase.');
-    var globals=Object.assign({React:React,ReactDOM:ReactDOM,supabase:client},React);
+    var batTracking=(${createSiteTracking.toString()})(window,true);
+    var globals=Object.assign({React:React,ReactDOM:ReactDOM,supabase:client,batTracking:batTracking},React);
     var scope=new Proxy(globals,{
       has:function(_,key){return key!==Symbol.unscopables && (key in globals || (typeof key==='string' && /^[A-Z]/.test(key) && !(key in window)));},
       get:function(target,key){if(key===Symbol.unscopables) return undefined;return key in target ? target[key] : icon(key);}
@@ -207,7 +204,9 @@ export function projectFiles(code: string, connection?: SiteConnection, sql = ""
     "src/main.jsx": `import React from "react";\nimport ReactDOM from "react-dom/client";\nimport App from "./App.jsx";\nimport "./index.css";\nReactDOM.createRoot(document.getElementById("root")).render(<App />);\n`,
     "src/icons.jsx": `import * as L from "lucide-react";\nexport const icon = (name) => L[name] || L[name + "Icon"] || L.Circle;\n`,
     "src/site-supabase.js": connection ? `import { createClient } from "@supabase/supabase-js";\nexport const supabase = createClient(${JSON.stringify(connection.url)}, ${JSON.stringify(connection.publicKey)});\n` : "export const supabase = null;\n",
-    "src/App.jsx": `import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment } from "react";\nimport { supabase } from "./site-supabase.js";\nimport { icon } from "./icons.jsx";\n${missingComponents(body).map(n => `const ${n} = icon("${n}");`).join("\n")}\n\n${body}\n\nexport default App;\n`,
+    "src/site-tracking.js": `export const batTracking = (${createSiteTracking.toString()})(window, false);\n`,
+    "TRACKING.md": "O objeto batTracking é compartilhado entre preview e exportação. Configure um ID real com configure({pixelId}); conceda/revogue autorização com setConsent(true/false). O Pixel só carrega após autorização explícita. A preferência não é persistida automaticamente: adapte à sua plataforma de consentimento e política de privacidade. No preview os eventos são simulados, sem envio à Meta. attribution() lê somente os parâmetros permitidos da URL atual; attributedUrl(url) preserva parâmetros existentes no checkout; whatsappUrl(numero,mensagem) acrescenta a origem na mensagem. Nenhum dado pessoal deve ser enviado em track(event,params). Lead e Purchase exigem confirmação real. CAPI e outras ferramentas não estão conectadas. Verifique os eventos no Meta Events Manager no seu domínio publicado antes de anunciar.\n",
+    "src/App.jsx": `import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment } from "react";\nimport { supabase } from "./site-supabase.js";\nimport { batTracking } from "./site-tracking.js";\nimport { icon } from "./icons.jsx";\n${missingComponents(body).map(n => `const ${n} = icon("${n}");`).join("\n")}\n\n${body}\n\nexport default App;\n`,
     "vercel.json": JSON.stringify({ rewrites: [{ source: "/((?!assets/).*)", destination: "/index.html" }] }),
     ...(sql ? { "supabase/setup.sql": sql, "SUPABASE-SETUP.md": "Execute supabase/setup.sql no SQL Editor do seu projeto Supabase e revise as políticas antes de publicar. Configure os usuários administradores e os buckets solicitados. A publicação não aplica SQL automaticamente. Em Authentication > URL Configuration, autorize os endereços publicados para confirmação de email/recuperação. /admin e sites separados exigem as mesmas políticas de segurança no banco.\n" } : {}),
   };
@@ -231,7 +230,7 @@ export const slugify = (value: string) => value.normalize("NFD").replace(/[\u030
 
 /** Capitalized JSX tags the generated code uses but never declares — the preview resolves them as lucide icons, so the export must too. */
 export function missingComponents(code: string) {
-  const used = new Set([...code.matchAll(/<([A-Z][A-Za-z0-9]*)\b/g)].map(m => m[1]!));
+  const used = new Set([...code.matchAll(/<([A-Z][A-Za-z0-9]*)\b/g)].flatMap(m => m[1] ? [m[1]] : []));
   const builtin = new Set(["React", "Fragment", "App"]);
   return [...used].filter(n => !builtin.has(n) && !new RegExp(`(?:function|class|const|let|var)\\s+${n}\\b|[{,]\\s*${n}\\s*[,}=]`).test(code));
 }

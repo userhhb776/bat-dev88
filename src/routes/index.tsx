@@ -163,12 +163,16 @@ function Index() {
       for (;;) { const { done, value } = await reader.read(); if (done || id !== requestId.current) break; full += decoder.decode(value, { stream: true }); setLive(full); }
       if (id !== requestId.current) { void reader.cancel(); return; }
       const failure = full.match(/\[\[BATDEV_ERRO:([\s\S]*?)\]\]/);
-      const result = { text: full.replace(/\n?\[\[BATDEV_ERRO:[\s\S]*?\]\]/g, ""), error: failure && !extractCode(full) ? failure[1] : "" };
+      const result = { text: full.replace(/\n?\[\[BATDEV_ERRO:[\s\S]*?\]\]/g, ""), error: failure ? failure[1] : "" };
       if (result.error) { setNotice(result.error); return; }
       if (!result.text.trim()) { setNotice("A IA retornou uma resposta vazia. Tente novamente."); return; }
-      // Se só faltou fechar as crases, fechamos nós mesmos e aproveitamos todo o código gerado.
-      if ((result.text.match(/```/g) ?? []).length % 2) result.text = result.text.trimEnd() + "\n```";
-      const code = mode === "build" ? extractCode(result.text) : null;
+      let code: string | null = null;
+      if (mode === "build") {
+        const { validateGeneration } = await import("@/lib/forge-validation");
+        const validation = validateGeneration(full);
+        if (validation.error) { setNotice(validation.error); return; }
+        code = validation.code;
+      }
       const completed: Project = { ...pending, messages: [...pending.messages, { role: "model", text: result.text }], code: code ?? project.code, sql: extractSql(result.text) || project.sql, updatedAt: new Date().toISOString() };
       setActive(completed); await persist(completed);
       if (code) { setTab("preview"); setMView("app"); setFrameKey(k => k + 1); void syncGitHub(completed); }
