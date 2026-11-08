@@ -22,3 +22,4 @@
 - Site generation streams DeepSeek output through the cookie-session-checked server route /api/generate (plain text, auto-continues on length); why: long professional builds exceeded the request timeout of non-streaming calls.
 - Exported/published projects declare undeclared JSX tags as lucide-react icons (src/icons.jsx shim); why: the preview resolves them at runtime, and the Vercel build failed without them.
 - Chat attachments: text files are inlined into the prompt; images/videos go to a public Supabase Storage bucket and their URL is given to the model. AI images use Pollinations URLs (no gateway).
+- Image attachments are described by Ollama Cloud vision (OLLAMA_API_KEY, describeImage) before DeepSeek builds; why: DeepSeek has no vision.

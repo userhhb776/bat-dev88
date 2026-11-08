@@ -171,7 +171,7 @@ export const describeImage = createServerFn({ method: "POST" }).middleware([priv
   try {
     const response = await fetch("https://ollama.com/api/chat", {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: process.env['OLLAMA_VISION_MODEL'] || "qwen3-vl:235b", stream: false, messages: [{ role: "user", images: [data.base64],
+      body: JSON.stringify({ model: process.env['OLLAMA_VISION_MODEL'] || "gemma4:31b", stream: false, messages: [{ role: "user", images: [data.base64],
         content: "Descreva em português, com precisão, esta imagem para um desenvolvedor web: se for print de erro, transcreva a mensagem exata; se for site/app, descreva layout, seções, cores (hex aproximado), fontes, textos visíveis e estilo. Máximo 250 palavras." }] }),
     });
     if (!response.ok) { console.error("Ollama", response.status, await response.text().catch(() => "")); return { text: "" }; }
