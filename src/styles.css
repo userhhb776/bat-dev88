@@ -140,6 +140,16 @@
     border-color: var(--color-border);
   }
 
+  @keyframes bd-float { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(4%,-6%) scale(1.12); } }
+  @keyframes bd-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+  @keyframes bd-shine { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @keyframes bd-beam { 0%,100% { opacity: .25; transform: rotate(-8deg); } 50% { opacity: .6; transform: rotate(8deg); } }
+  .bd-float { animation: bd-float 14s ease-in-out infinite; }
+  .bd-rise { animation: bd-rise .9s cubic-bezier(.2,.7,.2,1) both; }
+  .bd-beam { animation: bd-beam 9s ease-in-out infinite; transform-origin: bottom center; }
+  .bd-shine { background: linear-gradient(110deg, var(--foreground) 35%, var(--primary) 50%, var(--foreground) 65%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: bd-shine 6s linear infinite; }
+  @media (prefers-reduced-motion: reduce) { .bd-float, .bd-rise, .bd-beam, .bd-shine { animation: none; } }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
