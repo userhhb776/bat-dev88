@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { connectionPrompt, type SiteConnection } from "./site-connection";
 
 export const SYSTEM_PROMPT = `Você é o BatDev, um designer e engenheiro front-end sênior, caloroso e colaborativo. Você conversa em português do Brasil, como um parceiro criativo — nunca robótico.
 
@@ -88,8 +89,9 @@ export function applyEdits(code: string, edits: VisualEdit[]) {
   return { code: next, missed };
 }
 
-export function buildPrompt(mode: "chat" | "build", date: Date, code = "") {
+export function buildPrompt(mode: "chat" | "build", date: Date, code = "", connection?: SiteConnection) {
   return `${SYSTEM_PROMPT}
+${connectionPrompt(connection)}
 Data atual: ${date.toISOString().slice(0, 10)}. Use o ano ${date.getUTCFullYear()} em coleções e copyright, exceto se o usuário pedir outra data. Não alegue acesso a notícias ou à internet.
 ${mode === "chat" ? "MODO CONVERSA: apenas converse e planeje. Nunca gere código, nem quando pedirem para criar. Não envie o arquivo atual nem o reescreva. Responda em até 120 palavras, naturalmente, em 1 ou 2 parágrafos. Não dê checklist de identidade, paleta ou fontes; fale do objetivo da pessoa. No máximo UMA pergunta, apenas se a resposta for necessária. Não repita a instrução de escolher Construir a cada mensagem." : "MODO CONSTRUÇÃO: implemente o pedido; devolva um único bloco jsx completo. Preserve as partes não mencionadas em alterações."}
 ${mode === "build" && code ? `Site atual (base obrigatória para alterações):\n${code}` : ""}`;
@@ -110,8 +112,9 @@ function cleanForPreview(code: string) {
     .replace(/^\s*export\s+/gm, "");
 }
 
-export function previewHtml(code: string) {
+export function previewHtml(code: string, connection?: SiteConnection) {
   const source = JSON.stringify(cleanForPreview(code)).replace(/</g, "\\u003c");
+  const connectionJson = JSON.stringify(connection ?? null).replace(/</g, "\\u003c");
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <link rel="preconnect" href="https://cdn.jsdelivr.net"/>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -119,6 +122,7 @@ export function previewHtml(code: string) {
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.4/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+${connection ? '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>' : ""}
 </head><body><div id="root"></div>
 <script>
 (function(){
@@ -149,7 +153,10 @@ export function previewHtml(code: string) {
           (nodes||fallback).map(function(node,i){return React.createElement(node[0],Object.assign({key:i},node[1]));}));
       };
     }
-    var globals=Object.assign({React:React,ReactDOM:ReactDOM},React);
+    var config=${connectionJson};
+    var client=config && window.supabase ? window.supabase.createClient(config.url,config.publicKey,{auth:{persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}}) : null;
+    if(config && !client) throw new Error('Não foi possível carregar o Supabase.');
+    var globals=Object.assign({React:React,ReactDOM:ReactDOM,supabase:client},React);
     var scope=new Proxy(globals,{
       has:function(_,key){return key!==Symbol.unscopables && (key in globals || (typeof key==='string' && /^[A-Z]/.test(key) && !(key in window)));},
       get:function(target,key){if(key===Symbol.unscopables) return undefined;return key in target ? target[key] : icon(key);}
@@ -170,7 +177,7 @@ export function previewHtml(code: string) {
 </script></body></html>`;
 }
 
-export function projectFiles(code: string): Record<string, string> {
+export function projectFiles(code: string, connection?: SiteConnection, sql = ""): Record<string, string> {
   const body = cleanForPreview(code);
   return {
     "package.json": JSON.stringify(
@@ -180,7 +187,7 @@ export function projectFiles(code: string): Record<string, string> {
         version: "0.0.1",
         type: "module",
         scripts: { dev: "vite", build: "vite build", preview: "vite preview" },
-        dependencies: { react: "^18.3.1", "react-dom": "^18.3.1", "lucide-react": "^0.468.0" },
+        dependencies: { react: "^18.3.1", "react-dom": "^18.3.1", "lucide-react": "^0.468.0", ...(connection ? { "@supabase/supabase-js": "^2.119.0" } : {}) },
         devDependencies: {
           "@vitejs/plugin-react": "^4.3.4",
           vite: "^5.4.11",
@@ -199,13 +206,16 @@ export function projectFiles(code: string): Record<string, string> {
     "src/index.css": `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`,
     "src/main.jsx": `import React from "react";\nimport ReactDOM from "react-dom/client";\nimport App from "./App.jsx";\nimport "./index.css";\nReactDOM.createRoot(document.getElementById("root")).render(<App />);\n`,
     "src/icons.jsx": `import * as L from "lucide-react";\nexport const icon = (name) => L[name] || L[name + "Icon"] || L.Circle;\n`,
-    "src/App.jsx": `import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment } from "react";\nimport { icon } from "./icons.jsx";\n${missingComponents(body).map(n => `const ${n} = icon("${n}");`).join("\n")}\n\n${body}\n\nexport default App;\n`,
+    "src/site-supabase.js": connection ? `import { createClient } from "@supabase/supabase-js";\nexport const supabase = createClient(${JSON.stringify(connection.url)}, ${JSON.stringify(connection.publicKey)});\n` : "export const supabase = null;\n",
+    "src/App.jsx": `import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer, Fragment } from "react";\nimport { supabase } from "./site-supabase.js";\nimport { icon } from "./icons.jsx";\n${missingComponents(body).map(n => `const ${n} = icon("${n}");`).join("\n")}\n\n${body}\n\nexport default App;\n`,
+    "vercel.json": JSON.stringify({ rewrites: [{ source: "/((?!assets/).*)", destination: "/index.html" }] }),
+    ...(sql ? { "supabase/setup.sql": sql, "SUPABASE-SETUP.md": "Execute supabase/setup.sql no SQL Editor do seu projeto Supabase e revise as políticas antes de publicar. Configure os usuários administradores e os buckets solicitados. A publicação não aplica SQL automaticamente. Em Authentication > URL Configuration, autorize os endereços publicados para confirmação de email/recuperação. /admin e sites separados exigem as mesmas políticas de segurança no banco.\n" } : {}),
   };
 }
 
-export async function downloadZip(code: string) {
+export async function downloadZip(code: string, connection?: SiteConnection, sql = "") {
   const zip = new JSZip();
-  for (const [p, c] of Object.entries(projectFiles(code))) zip.file(p, c);
+  for (const [p, c] of Object.entries(projectFiles(code, connection, sql))) zip.file(p, c);
   const blob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
