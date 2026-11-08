@@ -11,6 +11,6 @@
 - [x] Verify source import, connection persistence and generated runtime.
 
 ## Sales-page foundation
-- [ ] Strengthen conversion guidance without fabricated claims or guarantees.
-- [ ] Add portable consent-aware Meta Pixel and safe attribution helpers, simulated in preview.
-- [ ] Verify preview/export behavior and document adaptation to the user's SaaS.
+- [x] Strengthen conversion guidance without fabricated claims or guarantees.
+- [x] Add portable consent-aware Meta Pixel and safe attribution helpers, simulated in preview.
+- [x] Verify preview/export helper behavior and document adaptation to the user's SaaS (32 tests and browser checks; real Meta events and a fresh AI generation/deployment were not exercised).

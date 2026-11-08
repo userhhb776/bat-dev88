@@ -113,6 +113,7 @@ export function previewHtml(code: string, connection?: SiteConnection) {
   const source = JSON.stringify(cleanForPreview(code)).replace(/</g, "\\u003c");
   const connectionJson = JSON.stringify(connection ?? null).replace(/</g, "\\u003c");
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>:root{--preview-surface:#fff;--preview-ink:#111;color-scheme:light}body{margin:0;background:var(--preview-surface);color:var(--preview-ink)}</style>
 <link rel="preconnect" href="https://cdn.jsdelivr.net"/>
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
