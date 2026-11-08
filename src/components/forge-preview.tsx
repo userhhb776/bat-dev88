@@ -26,8 +26,8 @@ export function ForgePreview({ code, onRepair, busy, editing = false, onEdit }: 
     window.addEventListener("message", receive);
     const timeout = window.setTimeout(() => {
       setState((previous) => previous === "loading" ? "error" : previous);
-      setError((previous) => previous || "O site demorou demais para abrir.");
-    }, 30000);
+      setError((previous) => previous || "timeout");
+    }, 60000);
     return () => { window.removeEventListener("message", receive); window.clearTimeout(timeout); };
   }, [html, attempt]);
 
@@ -40,10 +40,10 @@ export function ForgePreview({ code, onRepair, busy, editing = false, onEdit }: 
         <div role="status" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background p-6 text-center">
           {state === "loading" ? <><LoaderCircle className="h-6 w-6 animate-spin text-primary motion-reduce:animate-none" /><p className="text-sm">Abrindo seu site…</p></> : <>
             <AlertCircle className="h-6 w-6 text-destructive" />
-            <p className="text-sm">O site não abriu. Vamos tentar de novo?</p>
+            <p className="text-sm">{error === "timeout" ? "A internet está lenta para abrir o preview. O código não tem culpa — toque em Recarregar." : "O site não abriu. Toque em Corrigir site para a IA consertar o erro exato."}</p>{error && error !== "timeout" && <p className="max-w-md break-words font-mono text-xs text-muted-foreground">{error.slice(0, 220)}</p>}
             <div className="flex flex-wrap justify-center gap-2">
               <Button variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}><RotateCw /> Recarregar</Button>
-              <Button size="sm" disabled={busy} onClick={() => onRepair(error)}><Wrench /> Corrigir site</Button>
+              {error !== "timeout" && <Button size="sm" disabled={busy} onClick={() => onRepair(error)}><Wrench /> Corrigir site</Button>}
             </div>
           </>}
         </div>

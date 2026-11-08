@@ -77,12 +77,32 @@ export const publishVercel = createServerFn({ method: "POST" }).middleware([priv
         files: Object.entries(projectFiles(data.code)).map(([file, content]) => ({ file, data: content })),
         projectSettings: { framework: "vite", buildCommand: "vite build", outputDirectory: "dist", installCommand: "npm install" } }),
     });
-    const result = await response.json() as { alias?: string[]; url?: string; error?: { message?: string } };
-    if (!response.ok) { console.error("Vercel", response.status, result); return { url: "", error: `A Vercel recusou a publicação (${response.status}): ${result.error?.message ?? "erro desconhecido"}` }; }
+    const result = await response.json() as { id?: string; url?: string; error?: { message?: string } };
+    if (!response.ok) { console.error("Vercel", response.status, result); return { id: "", url: "", error: `A Vercel recusou a publicação (${response.status}): ${result.error?.message ?? "erro desconhecido"}` }; }
+    return { id: result.id ?? "", url: `https://${result.url}`, error: "" };
+  } catch { return { id: "", url: "", error: "A conexão com a Vercel falhou." }; }
+});
+/** Checks a deployment; when ready, assigns the clean <name>.vercel.app address; when failed, returns the build error lines. */
+export const vercelCheck = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(z.object({ id: z.string().min(1).max(100), name: z.string().min(1).max(60) })).handler(async ({ data }) => {
+  const token = process.env['VERCEL_TOKEN'];
+  if (!token) return { state: "ERROR", url: "", error: "Token da Vercel ausente." };
+  const h = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  try {
+    const d = await (await fetch(`https://api.vercel.com/v13/deployments/${data.id}`, { headers: h })).json() as { readyState?: string; url?: string; alias?: string[] };
+    const state = d.readyState ?? "BUILDING";
+    if (state === "ERROR" || state === "CANCELED") {
+      const events = await (await fetch(`https://api.vercel.com/v2/deployments/${data.id}/events`, { headers: h })).json().catch(() => []) as { text?: string }[];
+      const lines = (Array.isArray(events) ? events : []).map(e => e.text ?? "").filter(Boolean);
+      const i = lines.findIndex(l => /error/i.test(l));
+      return { state: "ERROR", url: "", error: (i >= 0 ? lines.slice(i, i + 8) : lines.slice(-8)).join("\n").slice(0, 1200) };
+    }
+    if (state !== "READY") return { state, url: "", error: "" };
     const wanted = `${slugify(data.name).slice(0, 52)}.vercel.app`;
-    const alias = result.alias?.includes(wanted) ? wanted : result.alias?.slice().sort((a, b) => a.length - b.length)[0];
-    return { url: `https://${alias ?? result.url}`, error: "" };
-  } catch { return { url: "", error: "A conexão com a Vercel falhou." }; }
+    const set = await fetch(`https://api.vercel.com/v2/deployments/${data.id}/aliases`, { method: "POST", headers: h, body: JSON.stringify({ alias: wanted }) });
+    if (set.ok) return { state, url: `https://${wanted}`, error: "" };
+    const fallback = d.alias?.slice().sort((a, b) => a.length - b.length)[0] ?? d.url;
+    return { state, url: `https://${fallback}`, error: `O endereço ${wanted} já pertence a outra conta da Vercel; usei este.` };
+  } catch { return { state: "BUILDING", url: "", error: "" }; }
 });
 export const saveGitHub = createServerFn({ method: "POST" }).middleware([privateAccess]).inputValidator(publishInput.extend({ repo: z.string().max(100).optional() })).handler(async ({ data }) => {
   const token = process.env['GITHUB_TOKEN'];
